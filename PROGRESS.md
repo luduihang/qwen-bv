@@ -3,9 +3,15 @@
 > Rolling session summaries. Newest first. Loaded at session start so the next session knows where work left off.
 > Each entry is 2-3 sentences. Older entries get pruned/consolidated when this file exceeds ~100 entries or ~8k chars.
 
+## Entries
 
+<!-- newest first -->
 
+## 2026-10-06 01:55 — T-015 原子 snapshot 管线完成 ✅（Phase 4 收口，136 全绿，真实 UP 主 e2e 通过）
 
+**内容**：T-015 app.py `run_collect(up_input, cfg)` — parse_up → sync_up → storage.atomic_save → payload（三相对路径 + bvids，manifest synced_at ISO8601 UTC）；中途失败 → 旧 snapshot 原样、无 tmp 残留、异常上抛（`a7fa239`）。main() 启动补 `wbi.configure(cfg)`（工作包 C 发现②）。另真实响应兼容 fix（`9525238`）：带 Cookie 实测发现新 wbi 接口 `data.list` 是 dict（列表在其 `vlist`）、条目为扁平字段（author/mid/length/description，无 owner 子对象）→ fetch_page/_normalize 兼容新旧两形状 + 2 真实形状测试。
+**验收门**：`pytest tests/test_pipeline.py -q` 6 绿；全量 `pytest tests/ -q` 136 绿（全 mock）。真实 e2e（用户 Cookie 已写入 config.yaml，值不入仓库）：老番茄 mid=546195 全量同步 678 视频 / 23 页 / 33.7s，drift=0；bvids.txt 678 行 == manifest.total_unique、无重复、created 降序、0 tmp 残留 —— Phase 4 验收（真实 UP 主产物落盘 + 失败演练）达成。
+**下一步**：Phase 5 串行 main — T-016 POST /collect + T-017 GET 缓存 API（T-018 test_api.py）；随后 Phase 6（错码/限速/日志）→ Phase 7（README + 真实验收：/collect 两种输入形态 + qwen-tts /transcribe 链路）。
 
 
 ## 2026-10-06 01:30 — 工作包 C 完成并合并 ✅（T-010~T-014，bili 链，worktree worker-c-bili）
@@ -15,41 +21,6 @@
 **实现发现**：① 新 wbi 接口列表在 `data.list`（旧接口 `data.vlist`）→ 实现为两者兼容读取，错码语义不变（契约的 "vlist" 按领域词理解）；② fetch_page 内加防御式 `wbi.configure(cfg)`（wbi._cfg 未绑定为 None 会 AttributeError，T-015 起 app 启动也应 configure）；③ 硬上限为纯防御（终止条件 ①②③ 先触发），以 _page_guard 单元测试覆盖。
 **现场备忘**：会话计划/思考全文在 `.agent/session-C-plan.md`（gitignore，防截断）。
 **下一步**：main 串行 T-015 原子 snapshot 管线（app.py run_collect + tests/test_pipeline.py）→ Phase 5 → Phase 6 → Phase 7（真实 e2e 需真实 Cookie：本网络匿名 arc/search -352 风控）。
-## 2026-10-06 01:06 — Worker A 完成并已合并 push。总结：
-
-## Worker A（wbi，T-006/T-007）✅
-
-| 任务 | 产物 | 验收 |
-|---|-...
-Worker A 完成并已合并 push。总结：
-
-## Worker A（wbi，T-006/T-007）✅
-
-| 任务 | 产物 | 验收 |
-|---|---|---|
-| T-006 `8e46322` | `wbi.py` — nav 取 key + TTL 10 分钟缓存 + `w_rid` 签名，`configure()` 绑定 Cookie/超时，失败 → `wbi_failed` | `pytest tests/test_wbi.py -q` 全绿（mock）+ 真实试拉 |
-| T-007 `c127a7a` | `tests/test_wbi.py` 24 例 — key 提取/签名形状/确定性 w_rid/特殊字符过滤/缓存命中/TTL 过期/失败不污染缓存/nav 失败 7 场景/请求头 | 全绿 |
-
-**全量 76 用例绿**（原 52 + 新 24），merge `ad4e6fd` + docs `09723f0` 已 push 到 `origin/main`（走 7897 代理，已记入记忆）。
-
-## 真实试拉发现（重要，已写入 PLAN Not...
-## 2026-10-06 00:26 — **Changed:**
-- `main` 合并 `w-b`（`--no-ff`，merge `1a3ae4b` — 分叉原因：A 的收口 `09723f0` ...
-**Changed:**
-- `main` 合并 `w-b`（`--no-ff`，merge `1a3ae4b` — 分叉原因：A 的收口 `09723f0` 已在 main 上，零文件冲突）
-- 收口 commit `28e6d68`：
-  - `TASKS.md` — T-008/T-009 移入 Done（含 commit/merge 指针），Phase 2 Active 只剩 C 的 T-010/T-011
-  - `PROGRESS.md` — B 收口条目 + A 的 00:14 会话记录转正（顺手清掉两个 harness 临时标记块）
-  - `PLAN.md` — Current step 更新为"A+B 已合并，92 全绿，下一步分叉 C"
-- 本地 `w-b` 分支已删（完全合并）
-
-**Verified:**
-- `pytest tests/ -q` → **92 passed**（52 Phase 1 + 24 A + 16 B）
-- 经 7897 代理 push 成功，`git ls-remote` 确认 `origin/main = 28e6d68`
-...
-## Entries
-
-<!-- newest first -->
 
 ## 2026-10-06 00:25 — Phase 2 工作包 B 收口 ✅（T-008/T-009 → Done，main 合并 + push）
 

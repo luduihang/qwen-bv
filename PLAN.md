@@ -99,7 +99,7 @@ worktree C: ───────── C: T-010→T-014 bili 链（单页/分�
 
 ## Current step
 
-**工作包 A+B+C 全部合并**（2026-10-06）— C：T-010~T-014 bili 链（fetch_page `5044d44` / 单页测试 `cefa8b7` / fetch_all+sync_up 骨架 `134029d` / 分页重试测试 `1752eba` / 完整性校验 `a74895f`，merge `7c1faa9`）；`pytest tests/ -q` 128 全绿（全 mock），21 场景表 bili 部分（4~15）全覆盖。下一步：main 串行 T-015 原子 snapshot 管线（app.py run_collect + test_pipeline）→ Phase 5（/collect + GET 缓存 API）→ Phase 6（错误/限速/日志）→ Phase 7（README + 真实 e2e；本网络匿名 arc/search -352 风控，验收需真实 Cookie）。
+**T-015 完成、Phase 4 全部收口**（2026-10-06）— T-015 app.py run_collect 原子 snapshot 管线（`a7fa239`，test_pipeline 6 例）+ main() 启动 `wbi.configure(cfg)`；`pytest tests/ -q` 136 全绿（全 mock）。真实 e2e（Cookie 已入 config.yaml，值不入仓库）：老番茄（mid=546195）全量 678 视频 / 23 页 / 33.7s、drift=0，三文件落盘无重复无 tmp 残留。实测发现新 wbi 接口真实响应形状（data.list 为 dict、条目扁平字段）→ 兼容 fix `9525238` + 2 真实形状测试。下一步：Phase 5 串行 main — T-016 POST /collect + T-017 GET 缓存 API（T-018 test_api.py）→ Phase 6（错误/限速/日志）→ Phase 7（README + 真实验收）。
 
 ## Notes
 
