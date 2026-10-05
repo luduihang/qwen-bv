@@ -99,7 +99,7 @@ worktree C: ───────── C: T-010→T-014 bili 链（单页/分�
 
 ## Current step
 
-**工作包 A 已合并**（2026-10-06）— T-006/T-007 在 worktree `worker-a-wbi` 完成（T-006 `8e46322`、T-007 `c127a7a`），merge `ad4e6fd` 已 push；`pytest tests/ -q` 76 全绿（全 mock）。WBI 真实试拉：nav 匿名可取 key（code=-101 但 wbi_img 仍在）；arc/search 匿名/带 buvid3 均 -352 风控（本网络环境，Phase 7 验收需真实 Cookie）。下一步：从新 main 分叉 C（bili 链，T-010~T-014）；B（w-b，T-008/T-009 已 commit 待合并）并行收口。
+**工作包 A+B 已合并**（2026-10-06）— A：T-006/T-007 wbi.py WBI 签名（T-006 `8e46322`、T-007 `c127a7a`，merge `ad4e6fd` + 收口 `09723f0`）；B：T-008/T-009 storage.py 原子存储（w-b `7848675`/`43237ab` + AGENTS.md `e1e5a27`，merge `1a3ae4b`）；`pytest tests/ -q` 92 全绿（全 mock）。WBI 真实试拉：nav 匿名可取 key（code=-101 但 wbi_img 仍在）；arc/search 匿名/带 buvid3 均 -352 风控（本网络环境，Phase 7 验收需真实 Cookie）。下一步：从新 main 分叉 C（bili 链，T-010~T-014）；C 合并后 T-015 及 Phase 5/6/7 回 main 串行收口。
 
 ## Notes
 

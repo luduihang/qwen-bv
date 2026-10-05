@@ -3,9 +3,22 @@
 > Rolling session summaries. Newest first. Loaded at session start so the next session knows where work left off.
 > Each entry is 2-3 sentences. Older entries get pruned/consolidated when this file exceeds ~100 entries or ~8k chars.
 
+
+
 ## Entries
 
 <!-- newest first -->
+
+## 2026-10-06 00:25 — Phase 2 工作包 B 收口 ✅（T-008/T-009 → Done，main 合并 + push）
+
+**内容**：T-008 storage.py 原子存储 — 三文件（bvids.txt/videos.jsonl/manifest.json）先写 *.tmp 全部成功再逐个 os.replace 提交；任一失败 → 清理全部 tmp、重抛异常、正式文件不被触碰（旧 snapshot 原样保留）；load_bvids / load_videos(offset, limit)（total 为切片前全量）/ load_manifest 目录/文件缺失 → None；bvids/videos 长度不一致 → 落盘前 ValueError（`7848675`）。T-009 16 例：三文件写正确（一行一个 BV / jsonl 同序往返含中文 / manifest 7 字段）、原子性（3 处 tmp→目录破坏：正式文件原样 + 无本次残留 + 异常上抛；新 mid 失败不留任何文件）、offset+limit 读取（越界 → []）、缺失 → None、空 snapshot（`43237ab`）。另建 AGENTS.md：GitHub 须走本地 7897 代理（2026-10-06 实测）+ 测试全 mock 无需网络 + 并行 Owns 协作约定（`e1e5a27`）。
+**验收门**：`pytest tests/test_storage.py -q` 16 绿；全量 `pytest tests/ -q` 92 绿（52 + A 24 + B 16，全 mock）。
+**现场/下一步**：本地 main 与 w-b 在 `ad4e6fd` 分叉（main 多了 A 的收口 `09723f0`）→ `--no-ff` 合并入 main（`1a3ae4b`）并 push（经 7897 代理）。下一步：从新 main 分叉工作包 C（bili 链 T-010→T-014，A 已就位可立即开始）；C 合并后 T-015 及 Phase 5/6/7 回 main 串行收口。
+
+## 2026-10-06 00:14 — 工作包 A 完成、合并 + push ✅（T-006/T-007 → Done）
+
+**内容**：T-006 wbi.py — nav 取 key + TTL 10 分钟缓存 + w_rid 签名，configure() 绑定 Cookie/超时，失败 → wbi_failed；实测匿名 nav code=-101 但 wbi_img 仍在 → 只按"wbi_img 是否存在"把关、不查业务 code（`8e46322`）。T-007 24 例 — key 提取/签名形状/确定性 w_rid/特殊字符过滤/缓存命中/TTL 过期/失败不污染缓存/nav 失败 7 场景/请求头，全 mock HTTP（`c127a7a`）。
+**验收门**：`pytest tests/test_wbi.py -q` 全绿；全量 76 绿。真实试拉：nav 匿名可取 key；arc/search 匿名/带 buvid3 均 -352 风控（本网络环境）→ Phase 7 验收需真实 Cookie（详见 PLAN Notes）。
 
 ## 2026-10-05 23:49 — Phase 1 完成 ✅（T-001~T-005，main 串行，5 commit）
 

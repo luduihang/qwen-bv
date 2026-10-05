@@ -82,14 +82,6 @@
 
 ### Phase 2 — WBI 签名 + 单页请求（工作包 A∥B + 串行整合）
 
-- [ ] T-008 — storage.py 原子存储〔工作包 B〕（w-b 进行中）
-  - **Owns:** `storage.py`
-  - **Contract:** 见契约总览存储契约
-  - **Done when:** `pytest tests/test_storage.py -q` 全绿（tmp 目录）
-- [ ] T-009 — storage.py 测试〔工作包 B〕（w-b 进行中）
-  - **Owns:** `tests/test_storage.py`
-  - 覆盖：三文件写正确（bvids 每行一个 / jsonl 同序 / manifest 字段）、原子性（任一 tmp 写失败：正式文件不变、无 tmp 残留）、读取（bvids / videos offset+limit / manifest）、目录缺失 → None
-  - **Done when:** `pytest tests/test_storage.py -q` 全绿
 - [ ] T-010 — bili.py 单页请求（工作包 C 起点，依赖 A 已合并）
   - **Owns:** `bili.py`（fetch_page 部分）
   - **Contract:** `fetch_page(mid, pn, cfg) -> (count, [VideoRecord])`；签名 GET `x/space/wbi/arc/search`（mid、pn、ps=page_size、order=pubdate）；`code != 0` → BiliError（UP 主不存在初始表 code ∈ {-404, -400} → not_found，其余 fetch_failed；Phase 7 实测补充）；HTTP 200 但缺 data / data.page / vlist → invalid_response；vlist 条目缺 bvid 丢弃
@@ -174,6 +166,8 @@
 
 ## Done
 
+- T-008 — storage.py 原子存储（三文件先 *.tmp 全写后逐个 os.replace；失败清理全部 tmp、重抛、正式文件不被触碰；load_bvids/load_videos/load_manifest 缺失 → None；bvids/videos 长度不一致 → 落盘前 ValueError）（commit `7848675`，merge `1a3ae4b`）
+- T-009 — storage.py 测试 16 例（三文件写正确 / 原子性：tmp 写失败正式文件原样 + 无残留 / offset+limit 读取 / 缺失 → None，全 tmp_path）（commit `43237ab`）
 - T-006 — wbi.py WBI 签名器（nav key 提取 + TTL 10 分钟缓存 + w_rid 签名，失败 → wbi_failed；实测匿名 nav code=-101 但 wbi_img 仍在 → 只按 wbi_img 把关不查业务 code；commit `8e46322`，merge `ad4e6fd`）
 - T-007 — wbi 签名器测试 24 例（key 提取/签名形状/确定性 w_rid/特殊字符过滤/缓存命中/TTL 过期/失败不污染缓存/nav 失败 7 场景/请求头，全 mock HTTP）（commit `c127a7a`）
 - T-001 — 初始化依赖（钉版本对齐 qwen-tts）、gitignore（config.yaml/data//.agent/）、根 conftest（commit `6d0e22a`）
