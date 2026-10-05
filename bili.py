@@ -122,7 +122,11 @@ def _published_at(created):
 
 
 def _normalize(v):
-    """vlist 条目 → VideoRecord（契约见 TASKS.md）；缺 bvid / 非 dict → None（调用方丢弃 + warn）。"""
+    """vlist 条目 → VideoRecord（契约见 TASKS.md）；缺 bvid / 非 dict → None（调用方丢弃 + warn）。
+
+    兼容两种条目形状：新 wbi 接口为扁平字段（author/mid/length/description，
+    2026-10-06 带 Cookie 实测）；旧接口为 owner.name / desc / duration。
+    """
     if not isinstance(v, dict):
         return None
     bvid = v.get("bvid")
@@ -134,12 +138,12 @@ def _normalize(v):
         "aid": v.get("aid"),
         "title": v.get("title"),
         "url": f"https://www.bilibili.com/video/{bvid}",
-        "mid": owner.get("mid"),
-        "author": owner.get("name"),
+        "mid": v.get("mid") or owner.get("mid"),
+        "author": v.get("author") or owner.get("name"),
         "created": v.get("created"),
         "published_at": _published_at(v.get("created")),
-        "length": v.get("duration"),  # 透传 vlist 原值（"12:34" 形式）
-        "description": v.get("desc"),
+        "length": v.get("length") if v.get("length") is not None else v.get("duration"),
+        "description": v.get("description") if v.get("description") is not None else v.get("desc"),
         "pic": v.get("pic"),
         "is_union_video": v.get("is_union_video"),
     }
@@ -204,12 +208,15 @@ def fetch_page(mid, pn, cfg):
         page = data.get("page") if isinstance(data, dict) else None
         if not isinstance(page, dict):
             raise BiliError("响应缺 data.page", "invalid_response")
-        # 新 wbi 接口列表在 data.list，旧接口在 data.vlist；两者皆缺 → invalid_response
+        # 新 wbi 接口（2026-10-06 实测）：data.list 是 dict，列表在其 vlist；
+        # 旧接口：data.vlist；列表缺失 / 非列表 → invalid_response
         vlist = data.get("list") if isinstance(data, dict) else None
+        if isinstance(vlist, dict):
+            vlist = vlist.get("vlist")
         if not isinstance(vlist, list):
             vlist = data.get("vlist") if isinstance(data, dict) else None
         if not isinstance(vlist, list):
-            raise BiliError("响应缺 vlist（data.list/data.vlist）", "invalid_response")
+            raise BiliError("响应缺 vlist（data.list.vlist/data.vlist）", "invalid_response")
         count = page.get("count")
         if isinstance(count, bool) or not isinstance(count, int):
             raise BiliError("data.page.count 不是整数", "invalid_response")

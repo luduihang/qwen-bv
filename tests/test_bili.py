@@ -219,6 +219,69 @@ def test_fetch_page_old_vlist_shape_also_accepted(monkeypatch):
     assert count == 1 and records[0]["bvid"] == "BV1test001"
 
 
+# ---------- 新 wbi 接口真实形状（2026-10-06 带 Cookie 实测） ----------
+
+def flat_vlist_entry(i, **overrides):
+    """新 wbi 接口条目（实测形状）：扁平字段，无 owner 子对象，length 为 "12:34" 串。"""
+    e = {
+        "aid": 2000 + i,
+        "bvid": f"BV2real{i:03d}",
+        "title": f"视频 {i}",
+        "length": "12:07",
+        "description": f"简介 {i}",
+        "pic": f"https://i2.hdslb.com/bfs/archive/{i}.jpg",
+        "created": 1700000000 + i,
+        "mid": 546195,
+        "author": "老番茄",
+        "is_union_video": 0,
+    }
+    e.update(overrides)
+    return e
+
+
+def arc_payload_real(count, vlist):
+    """新 wbi 接口真实响应（实测）：data.list 是 dict（slist/tlist/vlist），列表在其 vlist。"""
+    return {
+        "code": 0,
+        "message": "0",
+        "data": {
+            "list": {"slist": [], "tlist": {}, "vlist": vlist},
+            "page": {"pn": 1, "ps": 30, "count": count},
+            "is_risk": False,
+        },
+    }
+
+
+def test_fetch_page_real_list_dict_shape(monkeypatch):
+    """实测形状：data.list 为 dict 时，列表在其 vlist（Phase 4 真实冒烟发现）。"""
+    vlist = [flat_vlist_entry(1), flat_vlist_entry(2)]
+    install_arc(monkeypatch, lambda n, p: FakeResponse(200, arc_payload_real(2, vlist)))
+    count, records = fetch_page(546195, 1, CFG)
+    assert count == 2
+    assert [r["bvid"] for r in records] == ["BV2real001", "BV2real002"]
+
+
+def test_fetch_page_real_flat_fields_normalized(monkeypatch):
+    """实测扁平字段 → VideoRecord：author/mid 直取，length 来自 'length' 键（非 'duration'），description 来自 'description' 键。"""
+    vlist = [flat_vlist_entry(7)]
+    install_arc(monkeypatch, lambda n, p: FakeResponse(200, arc_payload_real(1, vlist)))
+    _, records = fetch_page(546195, 1, CFG)
+    assert records[0] == {
+        "bvid": "BV2real007",
+        "aid": 2007,
+        "title": "视频 7",
+        "url": "https://www.bilibili.com/video/BV2real007",
+        "mid": 546195,
+        "author": "老番茄",
+        "created": 1700000007,
+        "published_at": "2023-11-14T22:13:27Z",
+        "length": "12:07",
+        "description": "简介 7",
+        "pic": "https://i2.hdslb.com/bfs/archive/7.jpg",
+        "is_union_video": 0,
+    }
+
+
 # ---------- 请求形状 / 请求头 ----------
 
 def test_fetch_page_request_shape_and_cookie(monkeypatch):
