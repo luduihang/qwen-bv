@@ -7,6 +7,7 @@
     拒绝：昵称、空值、非数字、其他域名、mid<=0 → BiliError(message, "invalid_up")
 """
 import logging
+import math
 import re
 import time
 from datetime import datetime, timezone
@@ -224,3 +225,80 @@ def fetch_page(mid, pn, cfg):
             records.append(record)
         return count, records
     raise AssertionError("unreachable")  # 循环必在末次尝试 return/raise
+
+
+# ---------- 完整分页 + 去重 + 同步整合（T-012 / T-014） ----------
+
+def _created_key(record):
+    """created 降序排序键；缺失/非法 → 0（排末尾）。"""
+    created = record.get("created")
+    if isinstance(created, bool) or not isinstance(created, (int, float)):
+        return 0
+    return created
+
+
+def _page_guard(pn, total_pages):
+    """硬上限防死循环：pn > total_pages + 5 → invalid_response 立即停。"""
+    if total_pages is not None and pn > total_pages + 5:
+        raise BiliError(
+            f"分页硬上限：pn={pn} > total_pages+5={total_pages + 5}", "invalid_response"
+        )
+
+
+def fetch_all(mid, cfg):
+    """完整分页 → (name, total_reported, total_fetched, records, pages_fetched)。
+
+    分页契约（TASKS.md）：pn=1 → data.page.count → total_pages = ceil(count/ps)；
+    终止条件（满足其一即停）：① 累计 >= count ② 当前页 vlist 为空 ③ pn 达 total_pages；
+    另设硬上限 pn > total_pages+5 → invalid_response（防死循环）；
+    相邻页之间 sleep(request_interval_s)。
+    name 取首页 vlist 的 author（空则 "unknown"）；去重键 bvid（保先出现）；
+    排序 created 降序（稳定）；total_fetched = 拉到的 vlist 条目总数（含重复）。
+    """
+    bilibili_cfg = cfg.get("bilibili") or {}
+    interval = bilibili_cfg.get("request_interval_s", 1.0)
+    page_size = bilibili_cfg.get("page_size", 30)
+
+    pn = 1
+    total_reported = None
+    total_pages = None
+    name = None
+    pages_fetched = 0
+    all_records = []
+
+    while True:
+        _page_guard(pn, total_pages)
+        count, records = fetch_page(mid, pn, cfg)
+        pages_fetched += 1
+        if total_pages is None:  # 首页：定 total_pages 与 name
+            total_reported = count
+            total_pages = math.ceil(count / page_size) if count > 0 else 0
+            name = next((r["author"] for r in records if r.get("author")), None) or "unknown"
+        all_records.extend(records)
+
+        if len(records) == 0:        # ② 当前页 vlist 为空
+            break
+        if len(all_records) >= count:  # ① 已获取数 >= count
+            break
+        if pn >= total_pages:        # ③ pn 达到 total_pages
+            break
+        time.sleep(interval)
+        pn += 1
+
+    seen = set()
+    unique = []
+    for r in all_records:
+        if r["bvid"] in seen:
+            continue
+        seen.add(r["bvid"])
+        unique.append(r)
+    unique.sort(key=_created_key, reverse=True)
+    return name, total_reported, len(all_records), unique, pages_fetched
+
+
+def sync_up(mid, cfg):
+    """全量同步 → (name, total_reported, total_fetched, records, pages_fetched)。
+
+    T-014 在此加入完整性校验（drift 容忍规则，见 DECISIONS 2026-10-05-1）。
+    """
+    return fetch_all(mid, cfg)
