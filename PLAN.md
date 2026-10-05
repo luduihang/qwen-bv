@@ -99,7 +99,7 @@ worktree C: ───────── C: T-010→T-014 bili 链（单页/分�
 
 ## Current step
 
-**v0 规划中** — VISION/PLAN/TASKS 已落盘；剩 PROGRESS → DECISIONS → git init + GitHub。
+**v0 收官**（2026-10-05）— 五份文档落盘，仓库 https://github.com/luduihang/qwen-bv（public）已建并 push。下一步：Phase 1（T-001~T-005，main 串行）→ 完成后按工作包章节开 worktree A（wbi）∥ B（storage），A 合并后分叉 C（bili 链）。
 
 ## Notes
 
