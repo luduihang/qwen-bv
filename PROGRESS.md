@@ -7,6 +7,12 @@
 
 <!-- newest first -->
 
+## 2026-10-05 23:31 — 三步收尾完成 ✅
+
+1. **PROGRESS.md** — 正式模板（覆盖截断残留）+ 两条会话记录：scaffold 完成（23:27）、建仓收官（23:30）。已验证。
+2. **DECISIONS.md** — ADR-lite 模板 + 首条决策已冻结：**2026-10-05-1 全量同步完整性校验**（drift < 0 成功；`≤ max(3, 1%)` 成功 + warn；超过 → `incomplete` 502 不落盘，旧 snapshot 保留）。已验证。
+3. **git + GitHub** — `git init -b main`，5 份文档入库（500 行），无任何代码；仓库 **https://github.com/luduihang/qwen-bv**（public，沿用 qwen-tts 的目录名惯例）；2 commits 已 push（`b0d9412` → `be52372`），工作树干净，main 跟踪 origin/main。
+
 ## 2026-10-05 23:30 — GitHub 建仓收官：luduihang/qwen-bv（public）已 push
 **现场**：main 已 push（scaffold commit `b0d9412` + 本条 docs commit），工作树干净，5 份文档入库、尚无任何代码。
 **下一步**：Phase 1（T-001~T-005）main 串行 → 完成后按 PLAN 工作包章节开 worktree A（wbi）∥ B（storage），A 合并后分叉 C（bili 链）。
