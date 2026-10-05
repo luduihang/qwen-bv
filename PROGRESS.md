@@ -7,6 +7,12 @@
 
 <!-- newest first -->
 
+## 2026-10-05 23:49 — Phase 1 完成 ✅（T-001~T-005，main 串行，5 commit）
+
+**内容**：T-001 依赖钉版本（Flask 2.2.5 / requests 2.33.1 / PyYAML 6.0.3，对齐 qwen-tts）+ .gitignore（config.yaml、data/、.agent/）+ 根 conftest（`6d0e22a`）；T-002 config.py（REQUIRED_KEYS=server.host/port、storage.data_dir，DEFAULTS 补全 bilibili/timeout，缺文件/解析失败/缺必填 → ConfigError 清晰消息）+ config.example.yaml 本身可直接加载（`761a44d`）；T-003 app.py（create_app 工厂 + main，host/port 取配置，启动自动建 data_dir），实测：缺 config.yaml 启动明确报错退出 1、`python app.py` 后 curl :5001/health = 200（`d9ddffd`）；T-004 bili.py::parse_up（int/纯数字串/space URL → mid；bool/昵称/空/非数字/其他域名/mid≤0 → invalid_up）+ 35 单测（`0c59452`）；T-005 test_config（8 场景）+ test_app（health/data_dir）（`aab5398`）。
+**验收门**：`pytest tests/ -q` 52 全绿（全 mock 无网络）；PLAN 验收第 1 条（/health 200）已实测勾选；每任务一 commit（`T-00N: 摘要`）。
+**下一步**：按 PLAN 工作包章节开 git worktree A（wbi，T-006/T-007）∥ B（storage，T-008/T-009）；A 合并后分叉 C（bili 链，T-010~T-014）。
+
 ## 2026-10-05 23:31 — 三步收尾完成 ✅
 
 1. **PROGRESS.md** — 正式模板（覆盖截断残留）+ 两条会话记录：scaffold 完成（23:27）、建仓收官（23:30）。已验证。

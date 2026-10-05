@@ -80,30 +80,6 @@
 
 ## Active
 
-### Phase 1 — 骨架与配置（串行，main）
-
-- [ ] T-001 — 初始化依赖、gitignore、conftest
-  - **Owns:** `requirements.txt`, `.gitignore`, `conftest.py`
-  - `requirements.txt` 钉死 `Flask==2.2.5`, `requests==2.33.1`, `PyYAML==6.0.3`（与 qwen-tts 对齐）；`.gitignore`：config.yaml、data/、__pycache__/、*.pyc、.venv/、.pytest_cache/、.agent/
-  - **Done when:** `pip install -r requirements.txt` 成功，`python -c "import flask, requests, yaml"` 无错
-- [ ] T-002 — 配置文件与加载逻辑
-  - **Owns:** `config.example.yaml`, `config.py`
-  - **Contract:** 见契约总览配置契约
-  - `config.py`：`load_config(path=None) -> dict`；缺文件 / 解析失败 / 缺必填项（server.host、server.port、storage.data_dir）→ `ConfigError` 清晰消息退出；可选项按 DEFAULTS 补全
-  - **Done when:** 以 example 为 config.yaml 可正常加载；删掉 config.yaml 启动报明确的"配置文件缺失"
-- [ ] T-003 — Flask 入口与 /health
-  - **Owns:** `app.py`
-  - `create_app(cfg)` 工厂 + `main()`（host/port 取自配置）；启动自动创建 data_dir；`GET /health` → 200 `{"status":"ok"}`
-  - **Done when:** `python app.py` 启动后 `curl localhost:5001/health` 返回 200
-- [ ] T-004 — UP 输入解析
-  - **Owns:** `bili.py`（parse_up 部分）, `tests/test_up_parser.py`
-  - **Contract:** 见契约总览 UP 输入契约
-  - **Done when:** 数字 / 数字字符串 / space URL（https、http、尾随 path）均解析正确；昵称 / 空 / 非数字 / 其他域名 / mid≤0 全部 → invalid_up；用例全过
-- [ ] T-005 — Phase 1 单测
-  - **Owns:** `tests/test_config.py`, `tests/test_app.py`
-  - 覆盖：配置加载（正常/缺文件/缺必填/可选默认）、/health 响应、data_dir 自动创建
-  - **Done when:** `pytest tests/ -q` 全绿
-
 ### Phase 2 — WBI 签名 + 单页请求（工作包 A∥B + 串行整合）
 
 - [ ] T-006 — wbi.py WBI 签名器〔工作包 A〕
@@ -206,7 +182,11 @@
 
 ## Done
 
-（无）
+- T-001 — 初始化依赖（钉版本对齐 qwen-tts）、gitignore（config.yaml/data//.agent/）、根 conftest（commit `6d0e22a`）
+- T-002 — config.py（REQUIRED_KEYS + DEFAULTS，缺文件/缺必填 → ConfigError）+ config.example.yaml 可直接加载（commit `761a44d`）
+- T-003 — Flask 入口（create_app 工厂 + main）+ /health，启动自动建 data_dir（实测 curl 200；commit `d9ddffd`）
+- T-004 — parse_up（int/纯数字串/space URL → mid；非法 → invalid_up）+ 35 单测（commit `0c59452`）
+- T-005 — Phase 1 单测（test_config 8 场景 + test_app/health/data_dir），全量 52 用例绿（commit `aab5398`）
 
 ## Blocked
 

@@ -67,7 +67,7 @@ worktree C: ───────── C: T-010→T-014 bili 链（单页/分�
 
 ## Acceptance criteria
 
-- [ ] `python app.py` 启动，`curl localhost:5001/health` 返回 200
+- [x] `python app.py` 启动，`curl localhost:5001/health` 返回 200（Phase 1 已实测，2026-10-05）
 - [ ] 真实 UP 主 `POST /collect`（mid 与空间 URL 两种输入均验证）→ 200；`bvids.txt` 行数 == manifest.total_unique == B 站 page.count（或在容忍度内，见 DECISIONS）
 - [ ] bvids.txt 一行一个 BV、无重复、按 created 从新到旧；videos.jsonl 行数一致
 - [ ] 模拟中途某页失败：旧 snapshot 原样保留、无 *.tmp 残留、API 返回对应错误 JSON
@@ -99,7 +99,7 @@ worktree C: ───────── C: T-010→T-014 bili 链（单页/分�
 
 ## Current step
 
-**v0 收官**（2026-10-05）— 五份文档落盘，仓库 https://github.com/luduihang/qwen-bv（public）已建并 push。下一步：Phase 1（T-001~T-005，main 串行）→ 完成后按工作包章节开 worktree A（wbi）∥ B（storage），A 合并后分叉 C（bili 链）。
+**Phase 1 完成**（2026-10-05）— T-001~T-005 main 串行收官，`pytest tests/ -q` 52 全绿（全 mock），/health 实测 200。下一步：按工作包章节开 git worktree A（wbi，T-006/T-007）∥ B（storage，T-008/T-009），A 合并后分叉 C（bili 链，T-010~T-014）。
 
 ## Notes
 
