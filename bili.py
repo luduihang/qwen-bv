@@ -299,6 +299,29 @@ def fetch_all(mid, cfg):
 def sync_up(mid, cfg):
     """全量同步 → (name, total_reported, total_fetched, records, pages_fetched)。
 
-    T-014 在此加入完整性校验（drift 容忍规则，见 DECISIONS 2026-10-05-1）。
+    完整性校验（DECISIONS 2026-10-05-1）：drift = total_reported - total_unique
+    - drift < 0（抓取期间新增投稿）→ 成功（不告警）
+    - 0 <= drift <= max(3, total_reported 的 1%) → 成功 + log warn
+    - drift > 容忍度 → BiliError(code="incomplete")（调用方据此不落盘）
     """
-    return fetch_all(mid, cfg)
+    name, total_reported, total_fetched, records, pages_fetched = fetch_all(mid, cfg)
+    total_unique = len(records)
+    drift = total_reported - total_unique
+    if drift < 0:
+        logger.info(
+            "完整性校验：抓取期间有新增 reported=%s unique=%s (drift=%s)",
+            total_reported, total_unique, drift,
+        )
+        return name, total_reported, total_fetched, records, pages_fetched
+    tolerance = max(3, total_reported * 0.01)
+    if drift > tolerance:
+        raise BiliError(
+            f"完整性校验失败: reported={total_reported} unique={total_unique} "
+            f"drift={drift} > 容忍度 {tolerance:g}",
+            "incomplete",
+        )
+    logger.warning(
+        "完整性校验 drift 在容忍度内: reported=%s unique=%s drift=%s 容忍度=%s",
+        total_reported, total_unique, drift, f"{tolerance:g}",
+    )
+    return name, total_reported, total_fetched, records, pages_fetched
