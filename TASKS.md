@@ -82,19 +82,11 @@
 
 ### Phase 2 — WBI 签名 + 单页请求（工作包 A∥B + 串行整合）
 
-- [ ] T-006 — wbi.py WBI 签名器〔工作包 A〕
-  - **Owns:** `wbi.py`
-  - **Contract:** 见契约总览 WBI 契约
-  - **Done when:** `pytest tests/test_wbi.py -q` 全绿（mock HTTP）；另真实拉 nav 一次并成功签名 arc/search 参数（网络允许时，结果记 PROGRESS）
-- [ ] T-007 — wbi.py 测试〔工作包 A〕
-  - **Owns:** `tests/test_wbi.py`
-  - 覆盖：key 提取（img_url/sub_url → 文件名）、签名形状（wts 存在、w_rid 32 位 hex、参数不同 w_rid 不同）、缓存命中（第二次调用不再请求 nav）、TTL 过期重新取、nav 失败 → wbi_failed、nav 缺 wbi_img → wbi_failed
-  - **Done when:** `pytest tests/test_wbi.py -q` 全绿
-- [ ] T-008 — storage.py 原子存储〔工作包 B〕
+- [ ] T-008 — storage.py 原子存储〔工作包 B〕（w-b 进行中）
   - **Owns:** `storage.py`
   - **Contract:** 见契约总览存储契约
   - **Done when:** `pytest tests/test_storage.py -q` 全绿（tmp 目录）
-- [ ] T-009 — storage.py 测试〔工作包 B〕
+- [ ] T-009 — storage.py 测试〔工作包 B〕（w-b 进行中）
   - **Owns:** `tests/test_storage.py`
   - 覆盖：三文件写正确（bvids 每行一个 / jsonl 同序 / manifest 字段）、原子性（任一 tmp 写失败：正式文件不变、无 tmp 残留）、读取（bvids / videos offset+limit / manifest）、目录缺失 → None
   - **Done when:** `pytest tests/test_storage.py -q` 全绿
@@ -182,6 +174,8 @@
 
 ## Done
 
+- T-006 — wbi.py WBI 签名器（nav key 提取 + TTL 10 分钟缓存 + w_rid 签名，失败 → wbi_failed；实测匿名 nav code=-101 但 wbi_img 仍在 → 只按 wbi_img 把关不查业务 code；commit `8e46322`，merge `ad4e6fd`）
+- T-007 — wbi 签名器测试 24 例（key 提取/签名形状/确定性 w_rid/特殊字符过滤/缓存命中/TTL 过期/失败不污染缓存/nav 失败 7 场景/请求头，全 mock HTTP）（commit `c127a7a`）
 - T-001 — 初始化依赖（钉版本对齐 qwen-tts）、gitignore（config.yaml/data//.agent/）、根 conftest（commit `6d0e22a`）
 - T-002 — config.py（REQUIRED_KEYS + DEFAULTS，缺文件/缺必填 → ConfigError）+ config.example.yaml 可直接加载（commit `761a44d`）
 - T-003 — Flask 入口（create_app 工厂 + main）+ /health，启动自动建 data_dir（实测 curl 200；commit `d9ddffd`）

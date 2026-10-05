@@ -99,10 +99,11 @@ worktree C: ───────── C: T-010→T-014 bili 链（单页/分�
 
 ## Current step
 
-**Phase 1 完成**（2026-10-05）— T-001~T-005 main 串行收官，`pytest tests/ -q` 52 全绿（全 mock），/health 实测 200。下一步：按工作包章节开 git worktree A（wbi，T-006/T-007）∥ B（storage，T-008/T-009），A 合并后分叉 C（bili 链，T-010~T-014）。
+**工作包 A 已合并**（2026-10-06）— T-006/T-007 在 worktree `worker-a-wbi` 完成（T-006 `8e46322`、T-007 `c127a7a`），merge `ad4e6fd` 已 push；`pytest tests/ -q` 76 全绿（全 mock）。WBI 真实试拉：nav 匿名可取 key（code=-101 但 wbi_img 仍在）；arc/search 匿名/带 buvid3 均 -352 风控（本网络环境，Phase 7 验收需真实 Cookie）。下一步：从新 main 分叉 C（bili 链，T-010~T-014）；B（w-b，T-008/T-009 已 commit 待合并）并行收口。
 
 ## Notes
 
+- 2026-10-06 工作包 A 真实试拉发现：B 站匿名 nav 返回 code=-101（账号未登录）但 `data.wbi_img` 仍在 → wbi.py 只按"wbi_img 是否存在"把关，不检查业务 code（mixin key 是公共轮换 key，与登录态无关）；arc/search 匿名、带 buvid3 均返回 -352（风控校验失败）→ 当前网络环境无法匿名全量拉取，Phase 7 验收时把真实 Cookie（SESSDATA 等）写入 config.yaml，或换网络环境验证
 - 2026-10-05 规划：沿用 qwen-tts 约定（Flask+requests+pyyaml 钉版本、BiliError+ERROR_STATUS、config.yaml gitignore、单测全 mock）
 - 2026-10-05 规划：WBI（工作包 A）与 storage（工作包 B）零文件交集 → 提前到 Phase 2 窗口 git worktree 并行，Phase 4 只做 snapshot 管线整合
 - 2026-10-05 并行定稿（用户确认）：执行视图 = 三工作包 A/B/C（A∥B；C 在 A 合并后分叉 ∥ B），T-015 及 Phase 5/6/7 回 main 串行；B/C 互不依赖，关键路径 = P1→A→C→T-015→P5→P6→P7
