@@ -241,3 +241,144 @@ def test_fetch_page_anonymous_no_cookie_header(monkeypatch):
     calls = install_arc(monkeypatch, lambda n, p: FakeResponse(200, arc_payload(0, [])))
     fetch_page(777, 1, CFG)
     assert "Cookie" not in calls[0]["headers"]
+
+
+# ---------- T-013：完整分页 / 去重 / 重试 ----------
+
+def mk_entries(start, n, bvid_prefix="BV1pg"):
+    """构造 n 条 vlist 条目（i = start..start+n-1，created 递增）。"""
+    return [
+        vlist_entry(0, bvid=f"{bvid_prefix}{i:03d}", aid=10000 + i,
+                    title=f"v{i}", created=1700000000 + i)
+        for i in range(start, start + n)
+    ]
+
+
+def test_fetch_all_multi_page_full(monkeypatch):
+    """多页全量：count=95, ps=30 → 4 页（30+30+30+5），最后一页不足 page_size。"""
+    sleeps = mock_sleep(monkeypatch)
+    pages = {pn: mk_entries((pn - 1) * 30, 30 if pn < 4 else 5) for pn in range(1, 5)}
+    calls = install_arc(monkeypatch, lambda n, p: FakeResponse(200, arc_payload(95, pages[p["pn"]])))
+    name, total_reported, total_fetched, records, pages_fetched = bili.fetch_all(12345678, CFG)
+    assert (total_reported, total_fetched, pages_fetched) == (95, 95, 4)
+    assert name == "测试UP"
+    assert len(records) == 95
+    assert [c["params"]["pn"] for c in calls] == [1, 2, 3, 4]
+    assert sleeps == [1.0, 1.0, 1.0]  # 页间 3 次；末页后不 sleep
+    # created 降序：最后一页（created 最大）在前
+    assert records[0]["bvid"] == "BV1pg094"
+    assert records[-1]["bvid"] == "BV1pg000"
+
+
+def test_fetch_all_last_page_short(monkeypatch):
+    """count=35 → 2 页（30+5），第二页不足 page_size 正常终止。"""
+    sleeps = mock_sleep(monkeypatch)
+    calls = install_arc(monkeypatch, lambda n, p: FakeResponse(
+        200, arc_payload(35, mk_entries((p["pn"] - 1) * 30, 30 if p["pn"] == 1 else 5))))
+    _, _, _, records, pages_fetched = bili.fetch_all(1, CFG)
+    assert pages_fetched == 2 and len(records) == 35
+    assert len(calls) == 2 and sleeps == [1.0]
+
+
+def test_fetch_all_count_zero(monkeypatch):
+    """count=0 → 成功空清单（不报错、不落空成功）。"""
+    sleeps = mock_sleep(monkeypatch)
+    calls = install_arc(monkeypatch, lambda n, p: FakeResponse(200, arc_payload(0, [])))
+    name, total_reported, total_fetched, records, pages_fetched = bili.fetch_all(1, CFG)
+    assert (total_reported, total_fetched, pages_fetched, records) == (0, 0, 1, [])
+    assert name == "unknown"
+    assert len(calls) == 1 and sleeps == []
+
+
+def test_fetch_all_cross_page_dedup(monkeypatch):
+    """跨页重复 BV → 去重保先出现（total_fetched 含重复）。"""
+    mock_sleep(monkeypatch)
+    p1 = mk_entries(0, 30)
+    p2 = mk_entries(30, 5) + [dict(e, title="dup") for e in mk_entries(0, 5)]  # 5 新 + 5 重复
+    pages = {1: p1, 2: p2}
+    install_arc(monkeypatch, lambda n, p: FakeResponse(200, arc_payload(35, pages[p["pn"]])))
+    _, total_reported, total_fetched, records, _ = bili.fetch_all(1, CFG)
+    assert total_reported == 35
+    assert total_fetched == 40  # 30 + 10（含 5 重复）
+    bvids = [r["bvid"] for r in records]
+    assert len(bvids) == 35 and len(set(bvids)) == 35
+    # 重复条目保留先出现（第一页）的 version
+    assert all(r["title"] != "dup" for r in records)
+
+
+def test_fetch_all_sort_created_desc_stable(monkeypatch):
+    """created 降序；同 created 稳定保先出现顺序。"""
+    mock_sleep(monkeypatch)
+    vlist = [
+        vlist_entry(0, bvid="BV1a", title="A", created=100),
+        vlist_entry(1, bvid="BV1b", title="B", created=200),
+        vlist_entry(2, bvid="BV1c", title="C", created=100),  # 与 A 同 created，后出现
+        vlist_entry(3, bvid="BV1d", title="D", created=300),
+    ]
+    install_arc(monkeypatch, lambda n, p: FakeResponse(200, arc_payload(4, vlist)))
+    _, _, _, records, _ = bili.fetch_all(1, CFG)
+    assert [r["bvid"] for r in records] == ["BV1d", "BV1b", "BV1a", "BV1c"]
+
+
+def test_fetch_all_timeout_midpage_retry_success(monkeypatch):
+    """中途某页 timeout → 退避重试后成功，分页继续。"""
+    sleeps = mock_sleep(monkeypatch)
+    state = {"p2_attempts": 0}
+
+    def factory(n, p):
+        if p["pn"] == 2:
+            state["p2_attempts"] += 1
+            if state["p2_attempts"] == 1:
+                return requests.ReadTimeout("slow")
+        return FakeResponse(200, arc_payload(60, mk_entries((p["pn"] - 1) * 30, 30)))
+
+    calls = install_arc(monkeypatch, factory)
+    _, total_reported, total_fetched, records, pages_fetched = bili.fetch_all(1, CFG)
+    assert (total_reported, total_fetched, pages_fetched) == (60, 60, 2)
+    assert len(records) == 60
+    # sleep：页间 1.0（p1 后）→ 退避 1s（p2 首次超时后）
+    assert sleeps == [1.0, 1]
+    assert state["p2_attempts"] == 2
+
+
+def test_fetch_all_retry_exhausted_timeout(monkeypatch):
+    """某页 ReadTimeout 重试 max_retries 次耗尽 → timeout 上抛。"""
+    sleeps = mock_sleep(monkeypatch)
+
+    def factory(n, p):
+        if p["pn"] == 2:
+            return requests.ReadTimeout("slow")
+        return FakeResponse(200, arc_payload(60, mk_entries((p["pn"] - 1) * 30, 30)))
+
+    calls = install_arc(monkeypatch, factory)
+    with pytest.raises(BiliError) as e:
+        bili.fetch_all(1, CFG)
+    assert e.value.code == "timeout"
+    assert [c["params"]["pn"] for c in calls] == [1, 2, 2, 2, 2]  # p2 共 1+3 次
+    assert sleeps == [1.0, 1, 2, 4]  # 页间 + 退避 1s/2s/4s
+
+
+def test_fetch_all_retry_exhausted_5xx(monkeypatch):
+    """某页 HTTP 5xx 重试耗尽 → fetch_failed 上抛。"""
+    sleeps = mock_sleep(monkeypatch)
+
+    def factory(n, p):
+        if p["pn"] == 2:
+            return FakeResponse(503, {})
+        return FakeResponse(200, arc_payload(60, mk_entries((p["pn"] - 1) * 30, 30)))
+
+    install_arc(monkeypatch, factory)
+    with pytest.raises(BiliError) as e:
+        bili.fetch_all(1, CFG)
+    assert e.value.code == "fetch_failed"
+    assert sleeps == [1.0, 1, 2, 4]
+
+
+def test_page_guard_hard_limit():
+    """硬上限防死循环：pn > total_pages + 5 → invalid_response（守卫单元测试；
+    正常路径下终止条件 ①②③ 先于硬上限触发，硬上限为纯防御）。"""
+    bili._page_guard(6, 1)    # == total_pages+5，不触发
+    bili._page_guard(99, None)  # 首页尚无 total_pages，不触发
+    with pytest.raises(BiliError) as e:
+        bili._page_guard(7, 1)  # 7 > 1+5
+    assert e.value.code == "invalid_response"
