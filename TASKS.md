@@ -1,0 +1,221 @@
+# Tasks — bili-upstream
+
+> Granular task list. Each task ID is `T-NNN`.
+> 并行模式约定：每个任务声明 `Owns:`（允许改动的文件，并行窗口内零共享）与 `Contract:`（接口契约，冻结后改动需先改这里）。
+
+## 契约总览（先读这个）
+
+- 配置契约 = `config.example.yaml`（T-002 产物，唯一事实来源）：
+  ```yaml
+  server:
+    host: "127.0.0.1"
+    port: 5001
+  storage:
+    data_dir: "./data"
+  bilibili:
+    cookie: ""               # 可选；空 = 匿名
+    page_size: 30            # v1 默认 30；探明更大值稳定后可配置调整
+    request_interval_s: 1.0  # 相邻两页之间的间隔
+    max_retries: 3           # 临时故障最大重试次数（退避 1s/2s/4s）
+  timeout:
+    request_s: 20            # 单个 B 站 API 请求超时
+  ```
+- UP 输入契约：`bili.parse_up(value) -> int`（mid）
+  - 接受：正整数 int、纯数字字符串、空间 URL `https://space.bilibili.com/<mid>`（http/https、尾部 `/`、尾随 path/query、首尾空白均可）
+  - 拒绝：昵称、空值、非数字、其他域名、mid≤0 → `BiliError(message, "invalid_up")`
+- WBI 契约：`wbi.sign(params: dict) -> dict`
+  - 返回加入 `wts`（int 时间戳）+ `w_rid`（MD5 32 位 hex）的新 dict
+  - key 来源：nav 接口（`x/web-interface/nav`）`wbi_img.img_url`/`sub_url` → 两个文件名（去扩展名）拼接 → 固定 64 位置换表重排取前 32 位 = mixin key；`w_rid = md5(参数按 key 排序 urlencode(含 wts) + mixin_key)`
+  - 内存缓存 TTL 10 分钟；首次 / 过期 / nav 失败重试时重新取 key
+  - nav 请求失败、非 JSON、缺 wbi_img → `BiliError(message, "wbi_failed")`
+- BiliError 错码集：`invalid_up | not_found | fetch_failed | timeout | rate_limited | risk_control | invalid_response | wbi_failed | incomplete | internal`
+- 错误 JSON：`{"error": {"code", "message"}}`；映射：`invalid_up`→400，`not_found`→404，`fetch_failed`/`invalid_response`/`wbi_failed`/`incomplete`→502，`rate_limited`/`risk_control`→429，`timeout`→504，`internal`→500（路由 generic Exception 统一捕获 → internal）
+- VideoRecord 契约：
+  ```json
+  {"bvid":"BV...","aid":123,"title":"...","url":"https://www.bilibili.com/video/BV...","mid":123,"author":"...","created":1700000000,"published_at":"2023-11-15T08:00:00Z","length":"12:34","description":"...","pic":"https://...","is_union_video":false}
+  ```
+  - `bvid` 必填：vlist 条目缺 bvid → 丢弃（不计入有效集合，log warn）
+  - 其余字段缺失允许 null；`url` 由 bvid 拼装；`published_at` 为 ISO8601 UTC（Z），由 created 换算；`length` 透传 vlist 原值（B 站返回 "12:34" 形式字符串）
+  - 去重键 = bvid；排序 = created 降序（稳定排序，同值保持先出现顺序）
+- 分页契约：请求 pn=1 → `data.page.count` → `total_pages = ceil(count / page_size)` → 循环 pn=2..total_pages；终止条件（满足其一即停）：① 已获取数 >= count ② 当前页 vlist 为空 ③ pn 达到 total_pages；另设硬上限 `pn > total_pages + 5` 视为 invalid_response 立即停（防死循环）；相邻页之间 `sleep(request_interval_s)`
+- 重试契约：只对临时故障重试 —— requests.ConnectionError / ConnectTimeout / ReadTimeout（最终错码 timeout）/ HTTP 5xx（最终错码 fetch_failed）；退避 1s→2s→4s，最多 `max_retries` 次；`code != 0` / risk_control / invalid_response / 非 JSON 不重试、立即失败
+- 完整性校验契约（DECISIONS 2026-10-05-1）：`drift = total_reported - total_unique`；drift < 0（抓取期间新增）→ 成功；`0 <= drift <= max(3, total_reported 的 1%)` → 成功 + log warn；`drift > 容忍度` → `BiliError("incomplete")`，不落盘
+- /collect 请求：`{"mid": 12345678}` 或 `{"up": 12345678 | "12345678" | "https://space.bilibili.com/12345678"}`；两者都给或都缺 / 解析失败 → `invalid_up`
+- /collect 成功 200：`{mid, name, total_reported, total_fetched, total_unique, pages_fetched, bvids_file, videos_file, manifest_file, bvids}`；`*_file` 为相对路径（如 `./data/<mid>/bvids.txt`）；`total_fetched` = 拉到的 vlist 条目总数（含重复）
+- `GET /up/<mid>/bvids`：200 `{mid, count, bvids}`；从未同步（无 manifest.json）→ 404 `not_found`
+- `GET /up/<mid>/videos?offset=0&limit=100`：200 `{mid, total, offset, limit, videos}`；limit 默认 100、clamp 到 [1,500]；offset 默认 0、clamp ≥0；非整数参数按默认值处理；从未同步 → 404
+- 存储契约：`data/<mid>/` 三文件
+  - `bvids.txt` — 一行一个 BV，UTF-8，`\n` 结尾
+  - `videos.jsonl` — 一行一个 JSON VideoRecord，与 bvids.txt 同序
+  - `manifest.json` — `{mid, name, total_reported, total_fetched, total_unique, synced_at, pages_fetched}`（synced_at ISO8601 UTC）
+  - `storage.atomic_save(data_dir, mid, bvids, videos, manifest)`：先在同目录写三个 `*.tmp`，全部成功后逐个 `os.replace` 为正式名；任一失败 → 清理全部 tmp、抛异常，正式文件不被触碰
+  - 读取：`load_bvids(data_dir, mid) -> list | None`；`load_videos(data_dir, mid, offset, limit) -> (total, [VideoRecord]) | None`；`load_manifest(data_dir, mid) -> dict | None`；目录/文件缺失 → None
+- 日志契约：`[collect] start mid=<mid>` → 每页 `[collect] page=<pn> items=<n> total=<count>` → 重试 `[collect] retry page=<pn> attempt=<k> reason=<...>` → 失败 `[collect] error code=<code> mid=<mid> ...`；成功 `[collect] ok mid=<mid> pages=<n> unique=<m> duration=<x.x>s files=./data/<mid>/`；不打印完整 Cookie（最多 "cookie=set/empty"）
+
+### 测试场景覆盖表（21 场景）
+
+| # | 场景 | 测试文件 | 任务 |
+|---|---|---|---|
+| 1 | 数字 mid 输入解析 | tests/test_up_parser.py | T-004 |
+| 2 | space URL 输入解析 | tests/test_up_parser.py | T-004 |
+| 3 | 非法 UP 输入 | tests/test_up_parser.py | T-004 |
+| 4 | 一页视频 | tests/test_bili.py | T-011 |
+| 5 | 多页视频 | tests/test_bili.py | T-013 |
+| 6 | 最后一页不足 page_size | tests/test_bili.py | T-013 |
+| 7 | page.count = 0 | tests/test_bili.py | T-013 |
+| 8 | 不同页面出现重复 BV | tests/test_bili.py | T-013 |
+| 9 | 中途某页 timeout | tests/test_bili.py | T-013 |
+| 10 | retry 后成功 | tests/test_bili.py | T-013 |
+| 11 | retry 最终失败 | tests/test_bili.py | T-013 |
+| 12 | Bilibili code != 0 | tests/test_bili.py | T-011 |
+| 13 | 风控响应 | tests/test_bili.py | T-011, T-021 |
+| 14 | 非 JSON 响应 | tests/test_bili.py | T-011 |
+| 15 | 响应缺 data/list/vlist | tests/test_bili.py | T-011 |
+| 16 | 原子文件写入 | tests/test_storage.py | T-009 |
+| 17 | 中途失败不破坏旧 snapshot | tests/test_pipeline.py | T-015 |
+| 18 | /collect API 成功 | tests/test_api.py | T-018 |
+| 19 | /collect API 参数错误 | tests/test_api.py | T-018 |
+| 20 | GET cached bvids | tests/test_api.py | T-018 |
+| 21 | GET videos 分页 | tests/test_api.py | T-018 |
+
+## Active
+
+### Phase 1 — 骨架与配置（串行，main）
+
+- [ ] T-001 — 初始化依赖、gitignore、conftest
+  - **Owns:** `requirements.txt`, `.gitignore`, `conftest.py`
+  - `requirements.txt` 钉死 `Flask==2.2.5`, `requests==2.33.1`, `PyYAML==6.0.3`（与 qwen-tts 对齐）；`.gitignore`：config.yaml、data/、__pycache__/、*.pyc、.venv/、.pytest_cache/、.agent/
+  - **Done when:** `pip install -r requirements.txt` 成功，`python -c "import flask, requests, yaml"` 无错
+- [ ] T-002 — 配置文件与加载逻辑
+  - **Owns:** `config.example.yaml`, `config.py`
+  - **Contract:** 见契约总览配置契约
+  - `config.py`：`load_config(path=None) -> dict`；缺文件 / 解析失败 / 缺必填项（server.host、server.port、storage.data_dir）→ `ConfigError` 清晰消息退出；可选项按 DEFAULTS 补全
+  - **Done when:** 以 example 为 config.yaml 可正常加载；删掉 config.yaml 启动报明确的"配置文件缺失"
+- [ ] T-003 — Flask 入口与 /health
+  - **Owns:** `app.py`
+  - `create_app(cfg)` 工厂 + `main()`（host/port 取自配置）；启动自动创建 data_dir；`GET /health` → 200 `{"status":"ok"}`
+  - **Done when:** `python app.py` 启动后 `curl localhost:5001/health` 返回 200
+- [ ] T-004 — UP 输入解析
+  - **Owns:** `bili.py`（parse_up 部分）, `tests/test_up_parser.py`
+  - **Contract:** 见契约总览 UP 输入契约
+  - **Done when:** 数字 / 数字字符串 / space URL（https、http、尾随 path）均解析正确；昵称 / 空 / 非数字 / 其他域名 / mid≤0 全部 → invalid_up；用例全过
+- [ ] T-005 — Phase 1 单测
+  - **Owns:** `tests/test_config.py`, `tests/test_app.py`
+  - 覆盖：配置加载（正常/缺文件/缺必填/可选默认）、/health 响应、data_dir 自动创建
+  - **Done when:** `pytest tests/ -q` 全绿
+
+### Phase 2 — WBI 签名 + 单页请求（工作包 A∥B + 串行整合）
+
+- [ ] T-006 — wbi.py WBI 签名器〔工作包 A〕
+  - **Owns:** `wbi.py`
+  - **Contract:** 见契约总览 WBI 契约
+  - **Done when:** `pytest tests/test_wbi.py -q` 全绿（mock HTTP）；另真实拉 nav 一次并成功签名 arc/search 参数（网络允许时，结果记 PROGRESS）
+- [ ] T-007 — wbi.py 测试〔工作包 A〕
+  - **Owns:** `tests/test_wbi.py`
+  - 覆盖：key 提取（img_url/sub_url → 文件名）、签名形状（wts 存在、w_rid 32 位 hex、参数不同 w_rid 不同）、缓存命中（第二次调用不再请求 nav）、TTL 过期重新取、nav 失败 → wbi_failed、nav 缺 wbi_img → wbi_failed
+  - **Done when:** `pytest tests/test_wbi.py -q` 全绿
+- [ ] T-008 — storage.py 原子存储〔工作包 B〕
+  - **Owns:** `storage.py`
+  - **Contract:** 见契约总览存储契约
+  - **Done when:** `pytest tests/test_storage.py -q` 全绿（tmp 目录）
+- [ ] T-009 — storage.py 测试〔工作包 B〕
+  - **Owns:** `tests/test_storage.py`
+  - 覆盖：三文件写正确（bvids 每行一个 / jsonl 同序 / manifest 字段）、原子性（任一 tmp 写失败：正式文件不变、无 tmp 残留）、读取（bvids / videos offset+limit / manifest）、目录缺失 → None
+  - **Done when:** `pytest tests/test_storage.py -q` 全绿
+- [ ] T-010 — bili.py 单页请求（工作包 C 起点，依赖 A 已合并）
+  - **Owns:** `bili.py`（fetch_page 部分）
+  - **Contract:** `fetch_page(mid, pn, cfg) -> (count, [VideoRecord])`；签名 GET `x/space/wbi/arc/search`（mid、pn、ps=page_size、order=pubdate）；`code != 0` → BiliError（UP 主不存在初始表 code ∈ {-404, -400} → not_found，其余 fetch_failed；Phase 7 实测补充）；HTTP 200 但缺 data / data.page / vlist → invalid_response；vlist 条目缺 bvid 丢弃
+  - **Done when:** `pytest tests/test_bili.py -q` 全绿（单页部分）
+- [ ] T-011 — bili.py 单页测试
+  - **Owns:** `tests/test_bili.py`
+  - 覆盖：正常页 VideoRecord 字段规范化（含缺 bvid 丢弃）、code!=0、非 JSON 响应、缺 data/vlist、风控码（初始表 -352/-412/-509，Phase 7 实测补充）→ risk_control
+  - **Done when:** `pytest tests/test_bili.py -q` 全绿
+
+### Phase 3 — 完整分页 + 规范化 + 去重（工作包 C）
+
+- [ ] T-012 — 完整分页与 sync_up 整合
+  - **Owns:** `bili.py`（fetch_all/sync_up 部分）
+  - **Contract:** 见契约总览分页契约 + 重试契约；`sync_up(mid, cfg) -> (name, total_reported, total_fetched, records, pages_fetched)`；name 取首页 vlist 的 author（空则 "unknown"）
+  - **Done when:** `pytest tests/test_bili.py -q` 全绿（分页部分）
+- [ ] T-013 — 分页/去重/重试测试
+  - **Owns:** `tests/test_bili.py`
+  - 覆盖：多页全量、最后一页不足 page_size、count=0（成功空清单）、跨页去重、中途某页 timeout、retry 后成功、retry 最终失败（max_retries 耗尽抛错）、硬上限防死循环
+  - **Done when:** `pytest tests/ -q` 全绿
+
+### Phase 4 — storage + 原子 snapshot（T-014 属工作包 C；T-015 回 main 串行）
+
+- [ ] T-014 — sync_up 完整性校验
+  - **Owns:** `bili.py`（sync_up 完整性校验）, `tests/test_sync.py`
+  - **Contract:** 见契约总览完整性校验契约
+  - 覆盖：500→430（drift 70 > 容忍度）→ incomplete；drift ≤ max(3, 1%) → 成功 + warn；count < unique（抓取期间新增）→ 成功；count=0 → 成功
+  - **Done when:** `pytest tests/test_sync.py -q` 全绿
+- [ ] T-015 — 原子 snapshot 管线
+  - **Owns:** `app.py`（run_collect 部分）, `tests/test_pipeline.py`
+  - `run_collect(mid, cfg) -> payload`：parse_up → sync_up → storage.atomic_save → 响应 payload（含三个文件路径）；中途任何 BiliError → 不触碰 storage 正式文件、清理 tmp、异常上抛
+  - 覆盖：成功（三文件落盘、bvids 行数 == total_unique）、第 N 页失败演练（mock：旧文件原样、无 *.tmp 残留、异常上抛）
+  - **Done when:** `pytest tests/test_pipeline.py -q` 全绿
+
+### Phase 5 — /collect、cached API（串行，main）
+
+- [ ] T-016 — POST /collect
+  - **Owns:** `app.py`（路由）
+  - **Contract:** 见契约总览 /collect 请求/响应
+  - **Done when:** `pytest tests/test_api.py -q` 全绿（/collect 部分）
+- [ ] T-017 — GET cached API
+  - **Owns:** `app.py`（路由）
+  - **Contract:** 见契约总览 GET 契约
+  - **Done when:** `pytest tests/test_api.py -q` 全绿（GET 部分）
+- [ ] T-018 — API 测试
+  - **Owns:** `tests/test_api.py`
+  - 覆盖：/collect 成功（全 mock：200 + 字段齐全 + 三文件落盘）、/collect 参数错误（都缺 / 都给 / 昵称 / 非数字 → 400）、GET bvids（200 + 从未同步 404）、GET videos（offset/limit 分页 + 404 + clamp）、错误 JSON 形状 `{"error":{"code","message"}}`
+  - **Done when:** `pytest tests/ -q` 全绿
+
+### Phase 6 — 异常、限速、日志（串行，main）
+
+- [ ] T-019 — 错误分类与风控识别
+  - **Owns:** `bili.py`, `wbi.py`, `app.py`（ERROR_STATUS）
+  - BiliError 错码集与 HTTP 映射定稿（按契约总览）；风控码表定稿（初始 -352/-412/-509 + HTTP 412，Phase 7 实测补充）；risk_control 不重试；路由 generic Exception → 500 internal JSON
+  - **Done when:** `pytest tests/ -q` 全绿
+- [ ] T-020 — 同步日志
+  - **Owns:** `app.py`, `bili.py`
+  - **Contract:** 见契约总览日志契约
+  - **Done when:** mock 完整同步一次，日志行齐全（start/page/retry/error/ok + duration + 路径），日志无 Cookie
+- [ ] T-021 — 异常场景测试
+  - **Owns:** `tests/test_api.py`, `tests/test_bili.py`（补充）
+  - 覆盖：各错码 → 正确 HTTP 状态 + JSON 形状（invalid_up 400 / not_found 404 / fetch_failed 502 / risk_control 429 / rate_limited 429 / timeout 504 / incomplete 502 / internal 500）；风控不返回 200 空数组
+  - **Done when:** `pytest tests/ -q` 全绿
+
+### Phase 7 — 测试、README、真实端到端（串行，main）
+
+- [ ] T-022 — 全量测试套件
+  - **Owns:** `tests/`
+  - 对照契约总览 21 个测试场景逐一核对（全覆盖），全量绿
+  - **Done when:** `pytest tests/ -q` 全绿，且 21 场景均有对应用例
+- [ ] T-023 — README
+  - **Owns:** `README.md`
+  - 简介（含"qwen-tts 上游"定位）、快速开始（装依赖/配 config/启动）、curl 示例（成功+错误）、配置项表、故障排查、qwen-tts 集成示例（逐行读 bvids.txt 提交 /transcribe，仅作示例不进核心职责）
+  - **Done when:** 按 README 从零走一遍能启动服务（自查记录进 PROGRESS）
+- [ ] T-024 — 真实 UP 主端到端验收
+  - **Owns:** 无代码改动（仅验证 + PLAN/PROGRESS 勾选；如需修复则记入 Notes）
+  - 真实 UP 主跑 `POST /collect`（mid 与空间 URL 两种形态），逐条核对 PLAN.md Acceptance criteria（8 项）；最后从 bvids.txt 任取一个 BV 提交 qwen-tts `/transcribe` → 200
+  - **Done when:** PLAN.md 验收标准全部勾选，结果写入 PROGRESS.md，commit + push
+
+## In progress
+
+（无）
+
+## Done
+
+（无）
+
+## Blocked
+
+（无）
+
+## Format conventions
+
+- Task IDs increment monotonically across the project's lifetime — never reuse an ID, even for deleted tasks.
+- A task is "active" if it's queued and ready; "in progress" if a session is currently working on it; "done" if its acceptance criteria are met; "blocked" if it can't proceed without resolving a dependency.
+- Move tasks between sections as state changes. Don't delete completed tasks — they're a record.
+- For larger tasks (>1 session of work), spawn subtasks under it rather than letting it grow.
+- 并行约定：`Owns:` 声明的文件之外不得改动；契约变更必须先改本文件"契约总览"并同步相关任务。
