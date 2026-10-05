@@ -5,6 +5,48 @@
 
 
 
+
+
+
+## 2026-10-06 01:30 — 工作包 C 完成并合并 ✅（T-010~T-014，bili 链，worktree worker-c-bili）
+
+**内容**：T-010 bili.py fetch_page（WBI 签名 GET arc/search + VideoRecord 规范化 + 临时故障 1s/2s/4s 退避重试 + 错码映射，`5044d44`）；T-011 单页测试 18 例（`cefa8b7`）；T-012 fetch_all 完整分页（count→total_pages、三重终止条件、页间 sleep、_page_guard 硬上限、bvid 去重保先出现、created 降序稳定）+ sync_up 骨架（`134029d`）；T-013 分页/去重/重试测试 9 例（`1752eba`）；T-014 sync_up 完整性校验（drift<0 成功 / 0≤drift≤max(3,1%) 成功+warn / 超过 → incomplete）+ test_sync 9 例（含 500→430 验收场景）（`a74895f`）。
+**验收门**：`pytest tests/ -q` 128 全绿（92 基线 + 36 新增，全 mock）；21 场景表 bili 部分（4~15）全覆盖；merge `7c1faa9` 已 push；顺手删除远端 origin/w-b 残留。
+**实现发现**：① 新 wbi 接口列表在 `data.list`（旧接口 `data.vlist`）→ 实现为两者兼容读取，错码语义不变（契约的 "vlist" 按领域词理解）；② fetch_page 内加防御式 `wbi.configure(cfg)`（wbi._cfg 未绑定为 None 会 AttributeError，T-015 起 app 启动也应 configure）；③ 硬上限为纯防御（终止条件 ①②③ 先触发），以 _page_guard 单元测试覆盖。
+**现场备忘**：会话计划/思考全文在 `.agent/session-C-plan.md`（gitignore，防截断）。
+**下一步**：main 串行 T-015 原子 snapshot 管线（app.py run_collect + tests/test_pipeline.py）→ Phase 5 → Phase 6 → Phase 7（真实 e2e 需真实 Cookie：本网络匿名 arc/search -352 风控）。
+## 2026-10-06 01:06 — Worker A 完成并已合并 push。总结：
+
+## Worker A（wbi，T-006/T-007）✅
+
+| 任务 | 产物 | 验收 |
+|---|-...
+Worker A 完成并已合并 push。总结：
+
+## Worker A（wbi，T-006/T-007）✅
+
+| 任务 | 产物 | 验收 |
+|---|---|---|
+| T-006 `8e46322` | `wbi.py` — nav 取 key + TTL 10 分钟缓存 + `w_rid` 签名，`configure()` 绑定 Cookie/超时，失败 → `wbi_failed` | `pytest tests/test_wbi.py -q` 全绿（mock）+ 真实试拉 |
+| T-007 `c127a7a` | `tests/test_wbi.py` 24 例 — key 提取/签名形状/确定性 w_rid/特殊字符过滤/缓存命中/TTL 过期/失败不污染缓存/nav 失败 7 场景/请求头 | 全绿 |
+
+**全量 76 用例绿**（原 52 + 新 24），merge `ad4e6fd` + docs `09723f0` 已 push 到 `origin/main`（走 7897 代理，已记入记忆）。
+
+## 真实试拉发现（重要，已写入 PLAN Not...
+## 2026-10-06 00:26 — **Changed:**
+- `main` 合并 `w-b`（`--no-ff`，merge `1a3ae4b` — 分叉原因：A 的收口 `09723f0` ...
+**Changed:**
+- `main` 合并 `w-b`（`--no-ff`，merge `1a3ae4b` — 分叉原因：A 的收口 `09723f0` 已在 main 上，零文件冲突）
+- 收口 commit `28e6d68`：
+  - `TASKS.md` — T-008/T-009 移入 Done（含 commit/merge 指针），Phase 2 Active 只剩 C 的 T-010/T-011
+  - `PROGRESS.md` — B 收口条目 + A 的 00:14 会话记录转正（顺手清掉两个 harness 临时标记块）
+  - `PLAN.md` — Current step 更新为"A+B 已合并，92 全绿，下一步分叉 C"
+- 本地 `w-b` 分支已删（完全合并）
+
+**Verified:**
+- `pytest tests/ -q` → **92 passed**（52 Phase 1 + 24 A + 16 B）
+- 经 7897 代理 push 成功，`git ls-remote` 确认 `origin/main = 28e6d68`
+...
 ## Entries
 
 <!-- newest first -->

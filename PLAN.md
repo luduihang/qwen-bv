@@ -99,7 +99,7 @@ worktree C: ───────── C: T-010→T-014 bili 链（单页/分�
 
 ## Current step
 
-**工作包 A+B 已合并**（2026-10-06）— A：T-006/T-007 wbi.py WBI 签名（T-006 `8e46322`、T-007 `c127a7a`，merge `ad4e6fd` + 收口 `09723f0`）；B：T-008/T-009 storage.py 原子存储（w-b `7848675`/`43237ab` + AGENTS.md `e1e5a27`，merge `1a3ae4b`）；`pytest tests/ -q` 92 全绿（全 mock）。WBI 真实试拉：nav 匿名可取 key（code=-101 但 wbi_img 仍在）；arc/search 匿名/带 buvid3 均 -352 风控（本网络环境，Phase 7 验收需真实 Cookie）。下一步：从新 main 分叉 C（bili 链，T-010~T-014）；C 合并后 T-015 及 Phase 5/6/7 回 main 串行收口。
+**工作包 A+B+C 全部合并**（2026-10-06）— C：T-010~T-014 bili 链（fetch_page `5044d44` / 单页测试 `cefa8b7` / fetch_all+sync_up 骨架 `134029d` / 分页重试测试 `1752eba` / 完整性校验 `a74895f`，merge `7c1faa9`）；`pytest tests/ -q` 128 全绿（全 mock），21 场景表 bili 部分（4~15）全覆盖。下一步：main 串行 T-015 原子 snapshot 管线（app.py run_collect + test_pipeline）→ Phase 5（/collect + GET 缓存 API）→ Phase 6（错误/限速/日志）→ Phase 7（README + 真实 e2e；本网络匿名 arc/search -352 风控，验收需真实 Cookie）。
 
 ## Notes
 

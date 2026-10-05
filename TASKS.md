@@ -80,35 +80,8 @@
 
 ## Active
 
-### Phase 2 — WBI 签名 + 单页请求（工作包 A∥B + 串行整合）
+### Phase 4 — storage + 原子 snapshot（T-015 回 main 串行）
 
-- [ ] T-010 — bili.py 单页请求（工作包 C 起点，依赖 A 已合并）
-  - **Owns:** `bili.py`（fetch_page 部分）
-  - **Contract:** `fetch_page(mid, pn, cfg) -> (count, [VideoRecord])`；签名 GET `x/space/wbi/arc/search`（mid、pn、ps=page_size、order=pubdate）；`code != 0` → BiliError（UP 主不存在初始表 code ∈ {-404, -400} → not_found，其余 fetch_failed；Phase 7 实测补充）；HTTP 200 但缺 data / data.page / vlist → invalid_response；vlist 条目缺 bvid 丢弃
-  - **Done when:** `pytest tests/test_bili.py -q` 全绿（单页部分）
-- [ ] T-011 — bili.py 单页测试
-  - **Owns:** `tests/test_bili.py`
-  - 覆盖：正常页 VideoRecord 字段规范化（含缺 bvid 丢弃）、code!=0、非 JSON 响应、缺 data/vlist、风控码（初始表 -352/-412/-509，Phase 7 实测补充）→ risk_control
-  - **Done when:** `pytest tests/test_bili.py -q` 全绿
-
-### Phase 3 — 完整分页 + 规范化 + 去重（工作包 C）
-
-- [ ] T-012 — 完整分页与 sync_up 整合
-  - **Owns:** `bili.py`（fetch_all/sync_up 部分）
-  - **Contract:** 见契约总览分页契约 + 重试契约；`sync_up(mid, cfg) -> (name, total_reported, total_fetched, records, pages_fetched)`；name 取首页 vlist 的 author（空则 "unknown"）
-  - **Done when:** `pytest tests/test_bili.py -q` 全绿（分页部分）
-- [ ] T-013 — 分页/去重/重试测试
-  - **Owns:** `tests/test_bili.py`
-  - 覆盖：多页全量、最后一页不足 page_size、count=0（成功空清单）、跨页去重、中途某页 timeout、retry 后成功、retry 最终失败（max_retries 耗尽抛错）、硬上限防死循环
-  - **Done when:** `pytest tests/ -q` 全绿
-
-### Phase 4 — storage + 原子 snapshot（T-014 属工作包 C；T-015 回 main 串行）
-
-- [ ] T-014 — sync_up 完整性校验
-  - **Owns:** `bili.py`（sync_up 完整性校验）, `tests/test_sync.py`
-  - **Contract:** 见契约总览完整性校验契约
-  - 覆盖：500→430（drift 70 > 容忍度）→ incomplete；drift ≤ max(3, 1%) → 成功 + warn；count < unique（抓取期间新增）→ 成功；count=0 → 成功
-  - **Done when:** `pytest tests/test_sync.py -q` 全绿
 - [ ] T-015 — 原子 snapshot 管线
   - **Owns:** `app.py`（run_collect 部分）, `tests/test_pipeline.py`
   - `run_collect(mid, cfg) -> payload`：parse_up → sync_up → storage.atomic_save → 响应 payload（含三个文件路径）；中途任何 BiliError → 不触碰 storage 正式文件、清理 tmp、异常上抛
@@ -166,6 +139,11 @@
 
 ## Done
 
+- T-014 — sync_up 完整性校验（drift<0 成功 / 0≤drift≤max(3, 1%) 成功+warn / 超过 → incomplete 不落盘，DECISIONS 2026-10-05-1）+ test_sync 9 例（含 500→430 验收场景与 1% 边界）（commit `a74895f`，merge `7c1faa9`）
+- T-013 — 分页/去重/重试测试 9 例（多页全量/末页不足/count=0/跨页去重保先出现/created 降序稳定/中途 timeout 重试成功/重试耗尽 timeout+fetch_failed/硬上限守卫）（commit `1752eba`）
+- T-012 — fetch_all 完整分页（count→total_pages、三重终止条件、页间 sleep、_page_guard 硬上限防死循环、bvid 去重保先出现、created 降序稳定）+ sync_up 骨架（commit `134029d`）
+- T-011 — bili.py 单页测试 18 例（VideoRecord 规范化/缺 bvid 丢弃/code!=0/风控码/非 JSON 不重试/缺字段/请求形状，全 mock）（commit `cefa8b7`）
+- T-010 — bili.py fetch_page 单页请求（WBI 签名 GET arc/search + VideoRecord 规范化 + 临时故障 1s/2s/4s 退避重试 + 错码映射；实测新 wbi 接口列表在 data.list、旧接口 data.vlist → 两者兼容读取；fetch_page 内防御式 wbi.configure(cfg)）（commit `5044d44`）
 - T-008 — storage.py 原子存储（三文件先 *.tmp 全写后逐个 os.replace；失败清理全部 tmp、重抛、正式文件不被触碰；load_bvids/load_videos/load_manifest 缺失 → None；bvids/videos 长度不一致 → 落盘前 ValueError）（commit `7848675`，merge `1a3ae4b`）
 - T-009 — storage.py 测试 16 例（三文件写正确 / 原子性：tmp 写失败正式文件原样 + 无残留 / offset+limit 读取 / 缺失 → None，全 tmp_path）（commit `43237ab`）
 - T-006 — wbi.py WBI 签名器（nav key 提取 + TTL 10 分钟缓存 + w_rid 签名，失败 → wbi_failed；实测匿名 nav code=-101 但 wbi_img 仍在 → 只按 wbi_img 把关不查业务 code；commit `8e46322`，merge `ad4e6fd`）
