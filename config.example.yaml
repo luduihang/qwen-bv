@@ -1,0 +1,17 @@
+# bili-upstream 配置样例 —— 复制为 config.yaml 后按需修改（config.yaml 已 gitignore，可含敏感信息）
+
+server:
+  host: "127.0.0.1"
+  port: 5001
+
+storage:
+  data_dir: "./data"          # snapshot 根目录：data/<mid>/{bvids.txt, videos.jsonl, manifest.json}
+
+bilibili:
+  cookie: ""                  # 可选；空 = 匿名
+  page_size: 30               # v1 默认 30；探明更大值稳定后可配置调整
+  request_interval_s: 1.0     # 相邻两页之间的间隔
+  max_retries: 3              # 临时故障最大重试次数（退避 1s/2s/4s）
+
+timeout:
+  request_s: 20               # 单个 B 站 API 请求超时
