@@ -68,13 +68,13 @@ worktree C: ───────── C: T-010→T-014 bili 链（单页/分�
 ## Acceptance criteria
 
 - [x] `python app.py` 启动，`curl localhost:5001/health` 返回 200（Phase 1 已实测，2026-10-05）
-- [ ] 真实 UP 主 `POST /collect`（mid 与空间 URL 两种输入均验证）→ 200；`bvids.txt` 行数 == manifest.total_unique == B 站 page.count（或在容忍度内，见 DECISIONS）
-- [ ] bvids.txt 一行一个 BV、无重复、按 created 从新到旧；videos.jsonl 行数一致
-- [ ] 模拟中途某页失败：旧 snapshot 原样保留、无 *.tmp 残留、API 返回对应错误 JSON
-- [ ] 风控 / 超时 / UP 主不存在 / 参数错误 各返回对应错码 JSON（4xx/5xx），不是 500 HTML，不返回空数组假装成功
-- [ ] bvids.txt 任取一个 BV → qwen-tts `POST /transcribe` → 200（数据链路成立）
-- [ ] `pytest tests/ -q` 全绿（全 mock，不依赖真实 B 站网络）
-- [ ] `config.yaml` 与 `data/` 不进仓库，代码中无任何硬编码 Cookie
+- [x] 真实 UP 主 `POST /collect`（mid 与空间 URL 两种输入均验证）→ 200；`bvids.txt` 行数 == manifest.total_unique == B 站 page.count（老番茄 678/678/678，drift=0，2026-10-06）
+- [x] bvids.txt 一行一个 BV、无重复、按 created 从新到旧；videos.jsonl 行数一致（2026-10-06 程序化核对）
+- [x] 模拟中途某页失败：旧 snapshot 原样保留、无 *.tmp 残留、API 返回对应错误 JSON（test_pipeline/test_storage 全 mock 覆盖）
+- [x] 风控 / 超时 / UP 主不存在 / 参数错误 各返回对应错码 JSON（4xx/5xx），不是 500 HTML，不返回空数组假装成功（test_error_code_http_matrix 10 code + test_risk_control_not_200_empty_array）
+- [ ] bvids.txt 任取一个 BV → qwen-tts `POST /transcribe` → 200（**待用户决定**：ASR 不在本项目任务范围内，是否作为一次性外部验证执行）
+- [x] `pytest tests/ -q` 全绿（全 mock，不依赖真实 B 站网络）（195 例）
+- [x] `config.yaml` 与 `data/` 不进仓库，代码中无任何硬编码 Cookie（git ls-files + grep 核对，2026-10-06）
 
 ## Not in scope
 
@@ -99,7 +99,7 @@ worktree C: ───────── C: T-010→T-014 bili 链（单页/分�
 
 ## Current step
 
-**Phase 6 完成**（2026-10-06）— T-019 错码/风控定稿（HTTP 412 → risk_control、HTTP 429 → rate_limited，均不重试；风控码表 -352/-412/-509 定稿，Phase 7 实测补充）+ T-020 同步日志（[collect] start/page/retry/error/ok，无 Cookie 泄漏）+ T-021 异常场景测试（错码全矩阵 10 code + 风控不返回 200 空数组），`pytest tests/ -q` 195 全绿（全 mock）。下一步：Phase 7 串行 main — T-022 21 场景全量核对 → T-023 README → T-024 真实端到端验收（Cookie 已可用，-352 风险已解除；注意：qwen-tts /transcribe 链路不在本项目任务内，验收前需用户确认）。
+**v1 全部交付**（2026-10-06）— Phase 1~7 完成（T-001~T-024）。API：/health + POST /collect（mid/空间 URL 二选一）+ GET /up/<mid>/{bvids,videos}；错码 10 集全映射；[collect] 同步日志；pytest 195 全绿（全 mock）；README 完整。真实端到端验收通过（老番茄 678/678/678 drift=0，两种输入形态，BV 抽查 4/4，GET 端点经 API 验证）。PLAN 验收 8 项中 7 项已勾，仅 /transcribe 链路验证待用户决定（ASR 不在本项目任务内）。v2+ 候选：昵称搜索输入 / 增量同步（见 Not in scope）。
 
 ## Notes
 

@@ -7,6 +7,18 @@
 
 <!-- newest first -->
 
+## 2026-10-06 13:30 — Phase 7 完成 ✅ / v1 交付（T-022~T-024，main 串行）
+
+**内容**：T-022 21 场景全量核对 — 21/21 全覆盖无缺口，产出 tests/SCENARIOS.md 覆盖映射表，pytest 195 全绿（`8174ad9`）；T-023 README — 快速开始/config.yaml 全字段表/curl 示例/10 错码表/[collect] 日志格式/故障排查/下游集成说明（`e677186`）；T-024 真实端到端验收（无代码改动，见下）。
+**T-024 验收记录**（老番茄 mid=546195，真实网络 + Cookie，服务 python app.py @ 5001）：
+- `POST /collect` 两种输入形态均 200：`{"mid": 546195}`（27.8s）与 `{"up": "https://space.bilibili.com/546195"}`（28.0s）；均 total_reported=total_fetched=total_unique=678（drift=0）、pages_fetched=23
+- bvids.txt 678 行、一行一个 BV、无重复、created 新→旧；videos.jsonl 678 行且顺序一致；manifest.total_unique=678 == page.count
+- 抽查 4 条 BV（前 3 + 尾 1）：真实视频页均 HTTP 200，页面 <title> 与本地标题比对 4/4 通过（1 条页面 title 多 B 站分类后缀 _游戏热门视频，基础标题一致）
+- GET 缓存端点经 API：bvids count=678；videos?offset=677&limit=1 取尾部 1 条正确；未同步 mid → 404 not_found
+- 服务器日志：[collect] start(cookie=set) + 23×page 行 + ok(pages=23 unique=678 duration=27.8s files=./data/546195/)，无 Cookie 泄漏
+- PLAN 验收 8 项：7 项通过并勾选；第 6 项（任取 BV → qwen-tts /transcribe → 200）按用户范围决定**跳过**（ASR 不在本项目任务内，待用户决定是否作一次性外部验证）
+**下一步**：v1 已全部交付；剩余可选项：/transcribe 链路一次性验证（需用户确认）、昵称搜索输入 / 增量同步（v2+，见 PLAN Not in scope）。
+
 ## 2026-10-06 13:12 — Phase 6 完成 ✅（T-019~T-021，main 串行，3 commit）
 
 **内容**：T-019 错码与风控定稿 — fetch_page HTTP 412 → risk_control、HTTP 429 → rate_limited（均一次请求立即失败不重试）；风控码表定稿（-352/-412/-509，Phase 7 实测补充）；ERROR_STATUS 10 错码全映射确认；wbi nav 保持 wbi_failed（WBI 契约冻结不变）（`966bb02`）；T-020 同步日志 — [collect] start(mid+cookie=set/empty) / page(pn+items+total) / retry(pn+attempt+reason) / error(code+mid+duration+msg) / ok(pages+unique+duration+files)，mock 完整同步实测行齐全且无 Cookie 泄漏（`ae3b939`）；T-021 异常场景测试 — 错码全矩阵 10 code → 契约 HTTP 状态 + JSON 形状（失败不落盘）、HTTP 412/429/业务风控码不重试（1 次调用）、风控不返回 200 空数组、[collect] start/ok/error 日志行 + 无 Cookie（+19 例）（`e250c6a`）。

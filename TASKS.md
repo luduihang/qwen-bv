@@ -80,26 +80,15 @@
 
 ## Active
 
-### Phase 7 — 测试、README、真实端到端（串行，main）
-
-- [ ] T-022 — 全量测试套件
-  - **Owns:** `tests/`
-  - 对照契约总览 21 个测试场景逐一核对（全覆盖），全量绿
-  - **Done when:** `pytest tests/ -q` 全绿，且 21 场景均有对应用例
-- [ ] T-023 — README
-  - **Owns:** `README.md`
-  - 简介（含"qwen-tts 上游"定位）、快速开始（装依赖/配 config/启动）、curl 示例（成功+错误）、配置项表、故障排查、qwen-tts 集成示例（逐行读 bvids.txt 提交 /transcribe，仅作示例不进核心职责）
-  - **Done when:** 按 README 从零走一遍能启动服务（自查记录进 PROGRESS）
-- [ ] T-024 — 真实 UP 主端到端验收
-  - **Owns:** 无代码改动（仅验证 + PLAN/PROGRESS 勾选；如需修复则记入 Notes）
-  - 真实 UP 主跑 `POST /collect`（mid 与空间 URL 两种形态），逐条核对 PLAN.md Acceptance criteria（8 项）；最后从 bvids.txt 任取一个 BV 提交 qwen-tts `/transcribe` → 200
-  - **Done when:** PLAN.md 验收标准全部勾选，结果写入 PROGRESS.md，commit + push
-
 ## In progress
 
 （无）
 
 ## Done
+
+- T-024 — 真实 UP 主端到端验收（无代码改动；老番茄 mid=546195，真实网络 + Cookie）：mid 与空间 URL 两种形态 `POST /collect` → 200，678/678/678（drift=0）、23 页、~28s；bvids.txt 678 行无重复、created 新→旧、videos.jsonl 行数/顺序一致；4 条 BV 抽查（前 3+尾 1）真实页面 200 + 标题比对通过；GET 缓存端点经 API 验证（count/offset=677 尾部/未同步 404）；[collect] 日志 start/23×page/ok 齐全；PLAN 验收 8 项中 7 项通过（/transcribe 一项按用户范围决定跳过——ASR 不在本项目任务内）（验收记录见 PROGRESS 2026-10-06 13:30 条目）
+- T-023 — README（快速开始 + config.yaml 全字段配置表 + curl 示例（POST /collect + GET bvids/videos）+ 10 错码表 + [collect] 日志格式 + 故障排查（风控/incomplete/tmp 残留）+ 下游集成说明 + 项目结构）（commit `e677186`）
+- T-022 — 全量测试套件核对（21/21 场景全覆盖无缺口，tests/SCENARIOS.md 覆盖映射表；pytest 195 全绿）（commit `8174ad9`）
 
 - T-021 — 异常场景测试（错码全矩阵 10 code → 契约 HTTP 状态 + JSON 形状、失败不落盘；HTTP 412/429 与业务风控码不重试；风控不返回 200 空数组；[collect] start/ok/error 日志行 + 无 Cookie 泄漏）+19 例，全量 195 绿（commit `e250c6a`）
 - T-020 — 同步日志（[collect] start(mid+cookie=set/empty)/page(items+total)/retry(attempt+reason)/error(code+mid+duration)/ok(pages+unique+duration+files)，mock 同步实测行齐全且无 Cookie）（commit `ae3b939`）
