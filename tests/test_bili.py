@@ -445,3 +445,61 @@ def test_page_guard_hard_limit():
     with pytest.raises(BiliError) as e:
         bili._page_guard(7, 1)  # 7 > 1+5
     assert e.value.code == "invalid_response"
+
+
+# ---------- T-021: 错码/风控定稿（T-019 路径）+ [collect] 日志行（T-020） ----------
+
+
+@pytest.mark.parametrize(
+    "status,code",
+    [
+        (412, "risk_control"),  # HTTP 412 风控
+        (429, "rate_limited"),  # HTTP 429 限流
+    ],
+)
+def test_fetch_page_http_risk_status_no_retry(monkeypatch, status, code):
+    """HTTP 412/429 → 对应错码，且一次请求立即失败（不重试）。"""
+    calls = install_arc(monkeypatch, lambda n, p: FakeResponse(status, {}))
+    with pytest.raises(BiliError) as e:
+        fetch_page(1, 1, CFG)
+    assert e.value.code == code
+    assert len(calls) == 1
+
+
+def test_fetch_page_risk_business_code_no_retry(monkeypatch):
+    """业务风控码（-352）→ risk_control，code != 0 不重试。"""
+    calls = install_arc(monkeypatch, lambda n, p: FakeResponse(
+        200, arc_payload(0, [], code=-352, message="风控校验失败")))
+    with pytest.raises(BiliError) as e:
+        fetch_page(1, 1, CFG)
+    assert e.value.code == "risk_control"
+    assert len(calls) == 1
+
+
+def test_fetch_all_page_log_lines(monkeypatch, capsys):
+    """[collect] page=<pn> items=<n> total=<count> 每页一行。"""
+    mock_sleep(monkeypatch)
+    install_arc(monkeypatch, lambda n, p: FakeResponse(
+        200, arc_payload(35, mk_entries((p["pn"] - 1) * 30, 30 if p["pn"] == 1 else 5))))
+    bili.fetch_all(1, CFG)
+    out = capsys.readouterr().out
+    assert "[collect] page=1 items=30 total=35" in out
+    assert "[collect] page=2 items=5 total=35" in out
+
+
+def test_fetch_page_retry_log_line(monkeypatch, capsys):
+    """[collect] retry page=<pn> attempt=<k> reason=<...>（临时故障重试时）。"""
+    state = {"n": 0}
+
+    def factory(n, p):
+        state["n"] += 1
+        if state["n"] == 1:
+            return requests.ConnectTimeout("slow")
+        return FakeResponse(200, arc_payload(1, [vlist_entry(1)]))
+
+    mock_sleep(monkeypatch)
+    install_arc(monkeypatch, factory)
+    count, records = fetch_page(1, 1, CFG)
+    assert count == 1 and len(records) == 1
+    out = capsys.readouterr().out
+    assert "[collect] retry page=1 attempt=1 reason=ConnectTimeout" in out

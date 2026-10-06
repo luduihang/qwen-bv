@@ -336,3 +336,98 @@ def test_videos_jsonl_roundtrip_fields(tmp_path):
     assert [v["title"] for v in videos] == [f"视频{i}" for i in range(4)]
     assert all(v["url"] == f"https://www.bilibili.com/video/{v['bvid']}" for v in videos)
     assert all(set(v.keys()) >= {"bvid", "aid", "title", "url", "mid", "author", "created", "published_at", "length"} for v in videos)
+
+
+# ---------- T-021: 错码全矩阵 + 风控不假装成功 + 同步日志 ----------
+
+#: BiliError 错码集（TASKS 契约总览）→ 契约映射的 HTTP 状态
+ERROR_MATRIX = {
+    "invalid_up": 400,
+    "not_found": 404,
+    "fetch_failed": 502,
+    "invalid_response": 502,
+    "wbi_failed": 502,
+    "incomplete": 502,
+    "rate_limited": 429,
+    "risk_control": 429,
+    "timeout": 504,
+    "internal": 500,
+}
+
+
+@pytest.mark.parametrize("code", list(ERROR_MATRIX))
+def test_error_code_http_matrix(tmp_path, monkeypatch, code):
+    """错码集每个 code → 契约 HTTP 状态 + 错误 JSON 形状；失败不落盘。"""
+    cfg = make_cfg(tmp_path)
+    app_ = create_app(cfg)
+    if code == "invalid_up":
+        r = app_.test_client().post("/collect", json={})  # 都缺 → invalid_up
+    elif code == "internal":
+        monkeypatch.setattr(
+            "app.sync_up", lambda m, c: (_ for _ in ()).throw(RuntimeError("boom")))
+        r = app_.test_client().post("/collect", json={"mid": MID})
+    else:
+        monkeypatch.setattr(
+            "app.sync_up",
+            lambda m, c: (_ for _ in ()).throw(BiliError(f"mock {code}", code)),
+        )
+        r = app_.test_client().post("/collect", json={"mid": MID})
+    assert r.status_code == ERROR_MATRIX[code]
+    body = r.get_json()
+    assert set(body.keys()) == {"error"}
+    assert body["error"]["code"] == code
+    assert body["error"]["message"]
+    assert not (Path(cfg["storage"]["data_dir"]) / str(MID)).exists()  # 失败不落盘
+
+
+def test_risk_control_not_200_empty_array(tmp_path, monkeypatch):
+    """风控必须 429 错误 JSON，不返回 200 空数组假装成功，不落盘。"""
+    monkeypatch.setattr(
+        "app.sync_up",
+        lambda m, c: (_ for _ in ()).throw(BiliError("风控校验失败", "risk_control")),
+    )
+    cfg = make_cfg(tmp_path)
+    app_ = create_app(cfg)
+    r = app_.test_client().post("/collect", json={"mid": MID})
+    assert r.status_code == 429
+    body = r.get_json()
+    assert "bvids" not in body  # 不是 200 + 空 bvids 数组
+    assert body["error"]["code"] == "risk_control"
+    assert not (Path(cfg["storage"]["data_dir"]) / str(MID)).exists()
+
+
+def test_collect_log_lines_success_no_cookie(tmp_path, monkeypatch, capsys):
+    """[collect] start/ok 行齐全（mid/pages/unique/duration/files），日志无 Cookie。"""
+    cfg = make_cfg(tmp_path)
+    cfg["bilibili"]["cookie"] = "SESSDATA=secret_token_value"
+    mock_sync(monkeypatch, make_records(3))
+    app_ = create_app(cfg)
+    r = app_.test_client().post("/collect", json={"mid": MID})
+    assert r.status_code == 200
+    out = capsys.readouterr().out
+    assert f"[collect] start mid={MID} cookie=set" in out
+    assert f"[collect] ok mid={MID} pages=2 unique=3 duration=" in out
+    assert f"files={cfg['storage']['data_dir']}/{MID}/" in out
+    assert "secret_token_value" not in out  # 不打印完整 Cookie
+
+
+def test_collect_log_line_error(tmp_path, monkeypatch, capsys):
+    """失败 → [collect] error code=<code> mid=<mid> duration=...s。"""
+    monkeypatch.setattr(
+        "app.sync_up",
+        lambda m, c: (_ for _ in ()).throw(BiliError("mock 风控", "risk_control")),
+    )
+    app_ = create_app(make_cfg(tmp_path))
+    r = app_.test_client().post("/collect", json={"mid": MID})
+    assert r.status_code == 429
+    out = capsys.readouterr().out
+    assert f"[collect] error code=risk_control mid={MID} duration=" in out
+
+
+def test_collect_log_line_invalid_up_request(tmp_path, capsys):
+    """请求级 invalid_up（都缺）也有 error 行（无 mid 字段）。"""
+    app_ = create_app(make_cfg(tmp_path))
+    r = app_.test_client().post("/collect", json={})
+    assert r.status_code == 400
+    out = capsys.readouterr().out
+    assert "[collect] error code=invalid_up" in out
