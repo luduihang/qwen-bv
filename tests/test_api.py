@@ -280,3 +280,59 @@ def test_get_videos_never_synced_404(tmp_path):
     r = app.test_client().get(f"/up/{MID}/videos?offset=0&limit=10")
     assert r.status_code == 404
     assert r.get_json()["error"]["code"] == "not_found"
+
+
+# ---------- T-018: 错误 JSON 形状与补充覆盖 ----------
+
+
+def test_error_json_shape_exact(tmp_path):
+    """契约形状：{"error": {"code", "message"}}，无多余顶层键。"""
+    app = create_app(make_cfg(tmp_path))
+    r = app.test_client().post("/collect", json={})
+    body = r.get_json()
+    assert set(body.keys()) == {"error"}
+    assert set(body["error"].keys()) == {"code", "message"}
+    r2 = app.test_client().get(f"/up/{MID}/bvids")
+    body2 = r2.get_json()
+    assert set(body2.keys()) == {"error"}
+    assert set(body2["error"].keys()) == {"code", "message"}
+
+
+def test_collect_non_json_body_400(tmp_path):
+    """非 JSON body → 视为都缺 → 400 invalid_up（不是 415/500）。"""
+    app = create_app(make_cfg(tmp_path))
+    r = app.test_client().post("/collect", data="not json", content_type="text/plain")
+    assert r.status_code == 400
+    assert r.get_json()["error"]["code"] == "invalid_up"
+
+
+def test_collect_mid_numeric_string_ok(tmp_path, monkeypatch):
+    """mid 键传纯数字字符串：parse_up 统一解析，合法即 200。"""
+    cfg = make_cfg(tmp_path)
+    mock_sync(monkeypatch, make_records(2))
+    app = create_app(cfg)
+    r = app.test_client().post("/collect", json={"mid": str(MID)})
+    assert r.status_code == 200
+    assert r.get_json()["mid"] == MID
+
+
+def test_collect_success_no_tmp_leftover(tmp_path, monkeypatch):
+    """成功路径也不留 *.tmp（原子写已提交）。"""
+    cfg = make_cfg(tmp_path)
+    mock_sync(monkeypatch, make_records(3))
+    app = create_app(cfg)
+    r = app.test_client().post("/collect", json={"mid": MID})
+    assert r.status_code == 200
+    up_dir = Path(cfg["storage"]["data_dir"]) / str(MID)
+    assert list(up_dir.glob("*.tmp")) == []
+
+
+def test_videos_jsonl_roundtrip_fields(tmp_path):
+    """GET videos 返回的 VideoRecord 字段与落盘一致（含中文不丢）。"""
+    cfg = write_snapshot(tmp_path, 4)
+    app = create_app(cfg)
+    r = app.test_client().get(f"/up/{MID}/videos?offset=0&limit=4")
+    videos = r.get_json()["videos"]
+    assert [v["title"] for v in videos] == [f"视频{i}" for i in range(4)]
+    assert all(v["url"] == f"https://www.bilibili.com/video/{v['bvid']}" for v in videos)
+    assert all(set(v.keys()) >= {"bvid", "aid", "title", "url", "mid", "author", "created", "published_at", "length"} for v in videos)
