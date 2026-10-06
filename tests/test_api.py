@@ -167,3 +167,116 @@ def test_collect_unexpected_error_500_internal(tmp_path, monkeypatch):
     body = r.get_json()
     assert body["error"]["code"] == "internal"
     assert body["error"]["message"]
+
+
+# ---------- T-017: GET 缓存 API ----------
+
+
+def write_snapshot(tmp_path, n=10):
+    """用 storage 真实写一份 snapshot（不 mock），GET 端点读真实磁盘数据。"""
+    cfg = make_cfg(tmp_path)
+    records = make_records(n)
+    bvids = [r["bvid"] for r in records]
+    manifest = {
+        "mid": MID,
+        "name": "测试UP主",
+        "total_reported": n,
+        "total_fetched": n,
+        "total_unique": n,
+        "synced_at": "2026-10-06T00:00:00Z",
+        "pages_fetched": 1,
+    }
+    storage.atomic_save(cfg["storage"]["data_dir"], MID, bvids, records, manifest)
+    return cfg
+
+
+def test_get_bvids_200(tmp_path):
+    cfg = write_snapshot(tmp_path, 5)
+    app = create_app(cfg)
+    r = app.test_client().get(f"/up/{MID}/bvids")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["mid"] == MID
+    assert body["count"] == 5
+    assert body["bvids"] == [rec["bvid"] for rec in make_records(5)]
+
+
+def test_get_bvids_never_synced_404(tmp_path):
+    app = create_app(make_cfg(tmp_path))
+    r = app.test_client().get(f"/up/{MID}/bvids")
+    assert r.status_code == 404
+    assert r.get_json()["error"]["code"] == "not_found"
+
+
+def test_get_bvids_non_numeric_mid_400(tmp_path):
+    """路径 mid 复用 parse_up 契约：非数字 → 400 invalid_up。"""
+    app = create_app(make_cfg(tmp_path))
+    r = app.test_client().get("/up/abc/bvids")
+    assert r.status_code == 400
+    assert r.get_json()["error"]["code"] == "invalid_up"
+
+
+def test_get_videos_default_slice(tmp_path):
+    cfg = write_snapshot(tmp_path, 10)
+    app = create_app(cfg)
+    r = app.test_client().get(f"/up/{MID}/videos")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["mid"] == MID
+    assert body["total"] == 10
+    assert body["offset"] == 0
+    assert body["limit"] == 100
+    assert [v["bvid"] for v in body["videos"]] == [rec["bvid"] for rec in make_records(10)]
+
+
+def test_get_videos_offset_limit_slice(tmp_path):
+    cfg = write_snapshot(tmp_path, 10)
+    app = create_app(cfg)
+    r = app.test_client().get(f"/up/{MID}/videos?offset=2&limit=3")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["total"] == 10  # total 是切片前全量
+    assert body["offset"] == 2
+    assert body["limit"] == 3
+    assert [v["bvid"] for v in body["videos"]] == [rec["bvid"] for rec in make_records(10)[2:5]]
+
+
+@pytest.mark.parametrize(
+    "query,expected_offset,expected_limit",
+    [
+        ("offset=-3", 0, 100),  # offset clamp >= 0
+        ("limit=99999", 0, 500),  # limit clamp <= 500
+        ("limit=0", 0, 1),  # limit clamp >= 1
+        ("limit=-5", 0, 1),
+        ("offset=abc", 0, 100),  # 非整数 → 默认值
+        ("limit=abc", 0, 100),
+        ("offset=1.5", 0, 100),
+        ("offset=1&limit=2", 1, 2),  # 合法值原样
+    ],
+)
+def test_get_videos_clamp_and_defaults(tmp_path, query, expected_offset, expected_limit):
+    cfg = write_snapshot(tmp_path, 10)
+    app = create_app(cfg)
+    r = app.test_client().get(f"/up/{MID}/videos?{query}")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["offset"] == expected_offset
+    assert body["limit"] == expected_limit
+    assert len(body["videos"]) == len(make_records(10)[expected_offset : expected_offset + expected_limit])
+
+
+def test_get_videos_beyond_total_empty(tmp_path):
+    cfg = write_snapshot(tmp_path, 10)
+    app = create_app(cfg)
+    r = app.test_client().get(f"/up/{MID}/videos?offset=50&limit=10")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["total"] == 10
+    assert body["videos"] == []
+
+
+def test_get_videos_never_synced_404(tmp_path):
+    app = create_app(make_cfg(tmp_path))
+    r = app.test_client().get(f"/up/{MID}/videos?offset=0&limit=10")
+    assert r.status_code == 404
+    assert r.get_json()["error"]["code"] == "not_found"

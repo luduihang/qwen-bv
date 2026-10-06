@@ -3,7 +3,9 @@
 配置加载见 config.py；本文件提供 Flask app 工厂、路由、run_collect 同步管线与 main()：
     GET /health → 200 {"status":"ok"}
     POST /collect {"mid":...} | {"up":...} → 200 payload / 错误 JSON（T-016）
-（GET 缓存端点 T-017 接入；同步日志 T-020，见 TASKS.md）
+    GET /up/<mid>/bvids → 200 {mid, count, bvids}（T-017）
+    GET /up/<mid>/videos?offset&limit → 200 {mid, total, offset, limit, videos}（T-017）
+（同步日志 T-020，见 TASKS.md）
 """
 import sys
 import traceback
@@ -36,6 +38,19 @@ def _error_response(code, message):
     return jsonify(error={"code": code, "message": message}), ERROR_STATUS.get(code, 500)
 
 
+def _clamp_param(raw, default, lo=None, hi=None):
+    """GET 查询参数 → int：None/非整数 → 默认值，再 clamp 到 [lo, hi]（契约）。"""
+    try:
+        n = int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        n = default
+    if lo is not None and n < lo:
+        n = lo
+    if hi is not None and n > hi:
+        n = hi
+    return n
+
+
 def create_app(cfg):
     """Flask app 工厂；cfg 来自 load_config。"""
     app = Flask(__name__)
@@ -64,6 +79,43 @@ def create_app(cfg):
             traceback.print_exc()
             return _error_response("internal", f"内部错误: {e}")
         return jsonify(payload)
+
+    @app.get("/up/<mid_str>/bvids")
+    def up_bvids(mid_str):
+        """GET /up/<mid>/bvids → 200 {mid, count, bvids}；从未同步 → 404 not_found。"""
+        try:
+            mid = parse_up(mid_str)
+        except BiliError as e:
+            return _error_response(e.code, str(e))
+        data_dir = cfg["storage"]["data_dir"]
+        if storage.load_manifest(data_dir, mid) is None:
+            return _error_response("not_found", f"UP {mid} 从未同步（无 manifest.json）")
+        bvids = storage.load_bvids(data_dir, mid)
+        if bvids is None:  # 原子写保证三文件同生同灭，正常不会走到
+            return _error_response("not_found", f"UP {mid} 从未同步（无 bvids.txt）")
+        return jsonify(mid=mid, count=len(bvids), bvids=bvids)
+
+    @app.get("/up/<mid_str>/videos")
+    def up_videos(mid_str):
+        """GET /up/<mid>/videos?offset&limit → 200 {mid, total, offset, limit, videos}。
+
+        limit 默认 100 clamp [1,500]；offset 默认 0 clamp >=0；非整数参数按默认值；
+        从未同步 → 404 not_found。
+        """
+        try:
+            mid = parse_up(mid_str)
+        except BiliError as e:
+            return _error_response(e.code, str(e))
+        data_dir = cfg["storage"]["data_dir"]
+        if storage.load_manifest(data_dir, mid) is None:
+            return _error_response("not_found", f"UP {mid} 从未同步（无 manifest.json）")
+        offset = _clamp_param(request.args.get("offset"), 0, lo=0)
+        limit = _clamp_param(request.args.get("limit"), 100, lo=1, hi=500)
+        result = storage.load_videos(data_dir, mid, offset, limit)
+        if result is None:  # 原子写保证三文件同生同灭，正常不会走到
+            return _error_response("not_found", f"UP {mid} 从未同步（无 videos.jsonl）")
+        total, videos = result
+        return jsonify(mid=mid, total=total, offset=offset, limit=limit, videos=videos)
 
     return app
 
