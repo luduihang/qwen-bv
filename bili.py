@@ -1,4 +1,4 @@
-"""B 站客户端：UP 主输入解析 + arc/search 全量拉取（Phase 1 仅 parse_up）。
+"""B 站客户端：UP 主输入解析 + arc/search 单页/完整分页拉取 + sync_up 同步整合。
 
 契约（见 TASKS.md 契约总览）：
     parse_up(value) -> int  # mid
@@ -82,7 +82,8 @@ def parse_up(value):
 #: 投稿列表接口
 ARC_SEARCH_URL = "https://api.bilibili.com/x/space/wbi/arc/search"
 
-#: 风控码表（初始版，T-019 定稿，Phase 7 实测补充）
+#: 风控码表（T-019 定稿：初始集 -352/-412/-509，Phase 7 实测补充；
+#: HTTP 412 风控在 fetch_page 单独处理，同样 → risk_control、不重试）
 RISK_CODES = {-352, -412, -509}
 
 #: UP 主不存在码表（初始版，Phase 7 实测补充）
@@ -154,8 +155,8 @@ def fetch_page(mid, pn, cfg):
 
     只对临时故障重试（ConnectionError/ConnectTimeout/ReadTimeout → 最终 timeout；
     HTTP 5xx → 最终 fetch_failed），退避 1s→2s→4s，最多 max_retries 次；
-    code!=0 / 风控 / 非 JSON / 缺字段不重试、立即失败。
-    错码：not_found / risk_control / fetch_failed / timeout / invalid_response。
+    code!=0 / 风控 / 限流 / 非 JSON / 缺字段不重试、立即失败。
+    错码：not_found / risk_control / rate_limited / fetch_failed / timeout / invalid_response。
     """
     import wbi  # 函数级 import：wbi 从 bili 导入 BiliError，模块级互引会循环依赖
     wbi.configure(cfg)  # 防御式绑定：保证 sign 的请求头/超时与本 cfg 一致（幂等）
@@ -184,6 +185,10 @@ def fetch_page(mid, pn, cfg):
                 time.sleep(2 ** attempt)
                 continue
             raise BiliError(f"HTTP {resp.status_code}（重试 {max_retries} 次后仍失败）", "fetch_failed")
+        if resp.status_code == 412:
+            raise BiliError("HTTP 412 命中风控（不重试）", "risk_control")
+        if resp.status_code == 429:
+            raise BiliError("HTTP 429 触发限流（不重试）", "rate_limited")
         if resp.status_code != 200:
             raise BiliError(f"HTTP {resp.status_code}", "fetch_failed")
 
