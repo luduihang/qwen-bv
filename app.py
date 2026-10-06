@@ -8,6 +8,7 @@
 （同步日志 T-020，见 TASKS.md）
 """
 import sys
+import time
 import traceback
 from datetime import datetime, timezone
 
@@ -69,6 +70,10 @@ def create_app(cfg):
         body = request.get_json(silent=True) or {}
         has_mid, has_up = "mid" in body, "up" in body
         if has_mid == has_up:
+            print(
+                "[collect] error code=invalid_up msg=请求必须且只能提供 mid 或 up 之一",
+                flush=True,
+            )
             return _error_response("invalid_up", "请求必须且只能提供 mid 或 up 之一")
         up_input = body["mid"] if has_mid else body["up"]
         try:
@@ -127,22 +132,48 @@ def run_collect(up_input, cfg):
     storage 内部已清理 *.tmp，正式文件（旧 snapshot）不被触碰。
     payload 契约（TASKS.md）：mid/name/total_reported/total_fetched/total_unique/
     pages_fetched + bvids_file/videos_file/manifest_file（相对路径）+ bvids（去重后顺序）。
+    同步日志契约（TASKS.md）：[collect] start/page/retry/error/ok；不打印完整 Cookie。
     """
-    mid = parse_up(up_input)
-    name, total_reported, total_fetched, records, pages_fetched = sync_up(mid, cfg)
-    total_unique = len(records)
-    bvids = [r["bvid"] for r in records]
-    data_dir = str(cfg["storage"]["data_dir"]).rstrip("/")
-    manifest = {
-        "mid": mid,
-        "name": name,
-        "total_reported": total_reported,
-        "total_fetched": total_fetched,
-        "total_unique": total_unique,
-        "synced_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "pages_fetched": pages_fetched,
-    }
-    storage.atomic_save(data_dir, mid, bvids, records, manifest)
+    started = time.time()
+    cookie = (cfg.get("bilibili") or {}).get("cookie") or ""
+    try:
+        mid = parse_up(up_input)
+    except BiliError as e:
+        print(f"[collect] error code={e.code} duration={time.time() - started:.1f}s msg={e}", flush=True)
+        raise
+    print(f"[collect] start mid={mid} cookie={'set' if cookie else 'empty'}", flush=True)
+    try:
+        name, total_reported, total_fetched, records, pages_fetched = sync_up(mid, cfg)
+        total_unique = len(records)
+        bvids = [r["bvid"] for r in records]
+        data_dir = str(cfg["storage"]["data_dir"]).rstrip("/")
+        manifest = {
+            "mid": mid,
+            "name": name,
+            "total_reported": total_reported,
+            "total_fetched": total_fetched,
+            "total_unique": total_unique,
+            "synced_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "pages_fetched": pages_fetched,
+        }
+        storage.atomic_save(data_dir, mid, bvids, records, manifest)
+    except BiliError as e:
+        print(
+            f"[collect] error code={e.code} mid={mid} duration={time.time() - started:.1f}s msg={e}",
+            flush=True,
+        )
+        raise
+    except Exception as e:
+        print(
+            f"[collect] error code=internal mid={mid} duration={time.time() - started:.1f}s msg={e}",
+            flush=True,
+        )
+        raise
+    print(
+        f"[collect] ok mid={mid} pages={pages_fetched} unique={total_unique} "
+        f"duration={time.time() - started:.1f}s files={data_dir}/{mid}/",
+        flush=True,
+    )
     return {
         "mid": mid,
         "name": name,

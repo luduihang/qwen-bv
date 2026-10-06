@@ -174,6 +174,10 @@ def fetch_page(mid, pn, cfg):
             resp = _http_get(ARC_SEARCH_URL, params, headers, timeout)
         except _TRANSIENT_EXC as e:
             if attempt < max_retries:
+                print(
+                    f"[collect] retry page={pn} attempt={attempt + 1} reason={type(e).__name__}",
+                    flush=True,
+                )
                 time.sleep(2 ** attempt)  # 1s → 2s → 4s
                 continue
             raise BiliError(f"请求超时/连接失败（重试 {max_retries} 次后仍失败）: {e}", "timeout") from e
@@ -182,6 +186,10 @@ def fetch_page(mid, pn, cfg):
 
         if 500 <= resp.status_code < 600:
             if attempt < max_retries:
+                print(
+                    f"[collect] retry page={pn} attempt={attempt + 1} reason=HTTP {resp.status_code}",
+                    flush=True,
+                )
                 time.sleep(2 ** attempt)
                 continue
             raise BiliError(f"HTTP {resp.status_code}（重试 {max_retries} 次后仍失败）", "fetch_failed")
@@ -282,6 +290,7 @@ def fetch_all(mid, cfg):
         _page_guard(pn, total_pages)
         count, records = fetch_page(mid, pn, cfg)
         pages_fetched += 1
+        print(f"[collect] page={pn} items={len(records)} total={count}", flush=True)
         if total_pages is None:  # 首页：定 total_pages 与 name
             total_reported = count
             total_pages = math.ceil(count / page_size) if count > 0 else 0
