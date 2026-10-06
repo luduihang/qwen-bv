@@ -99,7 +99,7 @@ worktree C: ───────── C: T-010→T-014 bili 链（单页/分�
 
 ## Current step
 
-**Phase 5 完成**（2026-10-06）— T-016 POST /collect + T-017 GET /up/<mid>/{bvids,videos} + T-018 test_api 40 例（全 mock），`pytest tests/ -q` 176 全绿；真实 snapshot 冒烟通过（老番茄 678 条：bvids/分页/clamp/404/400 均正确）。v1 核心目标达成：一条 curl 拿全量去重 BV 清单，GET 读缓存。下一步：Phase 6 串行 main — T-019 错码/风控定稿 + T-020 同步日志 + T-021 异常场景测试 → Phase 7（README + 真实验收）。
+**Phase 6 完成**（2026-10-06）— T-019 错码/风控定稿（HTTP 412 → risk_control、HTTP 429 → rate_limited，均不重试；风控码表 -352/-412/-509 定稿，Phase 7 实测补充）+ T-020 同步日志（[collect] start/page/retry/error/ok，无 Cookie 泄漏）+ T-021 异常场景测试（错码全矩阵 10 code + 风控不返回 200 空数组），`pytest tests/ -q` 195 全绿（全 mock）。下一步：Phase 7 串行 main — T-022 21 场景全量核对 → T-023 README → T-024 真实端到端验收（Cookie 已可用，-352 风险已解除；注意：qwen-tts /transcribe 链路不在本项目任务内，验收前需用户确认）。
 
 ## Notes
 

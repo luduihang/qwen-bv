@@ -5,20 +5,18 @@
 
 
 <!-- session-in-progress:start=2026-10-05T15:37:01.606Z -->
-## 2026-10-06 12:00 — ## Phase 5 梳理（/collect + cached API，串行 main）
-
-**目标**：把已跑通的同步管线（`run_collect`）和磁盘... _(in progress)_
-## Phase 5 梳理（/collect + cached API，串行 main）
-
-**目标**：把已跑通的同步管线（`run_collect`）和磁盘 snapshot 暴露为 HTTP API —— 一条 curl 拿全量 BV 清单，GET 读缓存。**v1 核心目标在这一 Phase 达成**。
-
-| 任务 | Owns | 契约要点（TASKS 冻结） | Done when |
-|---|---|---|---|
-| **T-016** POST /collect | `app.py` 路由 | 请求 `{"mid": int}` 或 `{"up": int\|数字串\|空间URL}`；两者都给/都缺/解析失败 → 400 `invalid_up`。200 返回 `{mid, name, total_reported, total_fetched, total_unique, pages_fetched, bvids_file, videos_file, manifest_file, bvids}`（三 `*_file` 为相对路径）。错误统一 `{"erro...
+## 2026-10-06 13:07 — I've outlined the implementation for T-020, which adds synchronous logging acros... _(in progress)_
+I've outlined the implementation for T-020, which adds synchronous logging across app.py, the collect operation in app.py, the pagination logic in bili.py, and the retry mechanism in bili.py. Now I'll start implementing these changes.
 <!-- end-session-in-progress -->
 ## Entries
 
 <!-- newest first -->
+
+## 2026-10-06 13:12 — Phase 6 完成 ✅（T-019~T-021，main 串行，3 commit）
+
+**内容**：T-019 错码与风控定稿 — fetch_page HTTP 412 → risk_control、HTTP 429 → rate_limited（均一次请求立即失败不重试）；风控码表定稿（-352/-412/-509，Phase 7 实测补充）；ERROR_STATUS 10 错码全映射确认；wbi nav 保持 wbi_failed（WBI 契约冻结不变）（`966bb02`）；T-020 同步日志 — [collect] start(mid+cookie=set/empty) / page(pn+items+total) / retry(pn+attempt+reason) / error(code+mid+duration+msg) / ok(pages+unique+duration+files)，mock 完整同步实测行齐全且无 Cookie 泄漏（`ae3b939`）；T-021 异常场景测试 — 错码全矩阵 10 code → 契约 HTTP 状态 + JSON 形状（失败不落盘）、HTTP 412/429/业务风控码不重试（1 次调用）、风控不返回 200 空数组、[collect] start/ok/error 日志行 + 无 Cookie（+19 例）（`e250c6a`）。
+**验收门**：`pytest tests/ -q` 195 全绿（基线 176 + 新增 19，全 mock）；T-020 手动 mock 同步验证（start/retry/page/ok + error 两路径）通过。
+**下一步**：Phase 7 串行 main — T-022 21 场景全量核对 → T-023 README → T-024 真实端到端验收（Cookie 已可用，-352 风险已解除；qwen-tts /transcribe 链路不在本项目任务内，验收前需用户确认）。
 
 ## 2026-10-06 12:05 — Phase 5 完成 ✅（T-016~T-018，main 串行，3 commit + 冒烟）
 

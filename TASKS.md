@@ -80,21 +80,6 @@
 
 ## Active
 
-### Phase 6 — 异常、限速、日志（串行，main）
-
-- [ ] T-019 — 错误分类与风控识别
-  - **Owns:** `bili.py`, `wbi.py`, `app.py`（ERROR_STATUS）
-  - BiliError 错码集与 HTTP 映射定稿（按契约总览）；风控码表定稿（初始 -352/-412/-509 + HTTP 412，Phase 7 实测补充）；risk_control 不重试；路由 generic Exception → 500 internal JSON
-  - **Done when:** `pytest tests/ -q` 全绿
-- [ ] T-020 — 同步日志
-  - **Owns:** `app.py`, `bili.py`
-  - **Contract:** 见契约总览日志契约
-  - **Done when:** mock 完整同步一次，日志行齐全（start/page/retry/error/ok + duration + 路径），日志无 Cookie
-- [ ] T-021 — 异常场景测试
-  - **Owns:** `tests/test_api.py`, `tests/test_bili.py`（补充）
-  - 覆盖：各错码 → 正确 HTTP 状态 + JSON 形状（invalid_up 400 / not_found 404 / fetch_failed 502 / risk_control 429 / rate_limited 429 / timeout 504 / incomplete 502 / internal 500）；风控不返回 200 空数组
-  - **Done when:** `pytest tests/ -q` 全绿
-
 ### Phase 7 — 测试、README、真实端到端（串行，main）
 
 - [ ] T-022 — 全量测试套件
@@ -116,6 +101,9 @@
 
 ## Done
 
+- T-021 — 异常场景测试（错码全矩阵 10 code → 契约 HTTP 状态 + JSON 形状、失败不落盘；HTTP 412/429 与业务风控码不重试；风控不返回 200 空数组；[collect] start/ok/error 日志行 + 无 Cookie 泄漏）+19 例，全量 195 绿（commit `e250c6a`）
+- T-020 — 同步日志（[collect] start(mid+cookie=set/empty)/page(items+total)/retry(attempt+reason)/error(code+mid+duration)/ok(pages+unique+duration+files)，mock 同步实测行齐全且无 Cookie）（commit `ae3b939`）
+- T-019 — 错码与风控定稿（fetch_page HTTP 412 → risk_control、HTTP 429 → rate_limited，均不重试；风控码表定稿 -352/-412/-509，Phase 7 实测补充；ERROR_STATUS 10 错码全映射确认）（commit `966bb02`）
 - T-018 — test_api 补齐（错误 JSON 精确形状/非 JSON body 400/mid 数字串/无 tmp 残留/jsonl 中文往返），全量 176 绿 + 真实 snapshot 冒烟（678 条 bvids/分页/clamp/404/400）（commit `630bb71`）
 - T-017 — GET /up/<mid>/bvids 与 /videos?offset&limit（从未同步 404 not_found；limit clamp [1,500] 默认 100、offset clamp >=0 默认 0、非整数按默认值）+ test_api GET 15 例（commit `f4acf04`）
 - T-016 — POST /collect（mid/up 二选一解析 + run_collect 管线 + ERROR_STATUS 契约映射 + 错误 JSON）+ test_api /collect 20 例（全 mock）（commit `f37fb6c`）
