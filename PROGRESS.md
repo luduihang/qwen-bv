@@ -3,11 +3,6 @@
 > Rolling session summaries. Newest first. Loaded at session start so the next session knows where work left off.
 > Each entry is 2-3 sentences. Older entries get pruned/consolidated when this file exceeds ~100 entries or ~8k chars.
 
-
-<!-- session-in-progress:start=2026-10-05T15:37:01.606Z -->
-## 2026-10-06 13:07 — I've outlined the implementation for T-020, which adds synchronous logging acros... _(in progress)_
-I've outlined the implementation for T-020, which adds synchronous logging across app.py, the collect operation in app.py, the pagination logic in bili.py, and the retry mechanism in bili.py. Now I'll start implementing these changes.
-<!-- end-session-in-progress -->
 ## Entries
 
 <!-- newest first -->
