@@ -1,19 +1,39 @@
 """bili-upstream — UP 主（mid/空间 URL）→ 全量视频/BV 清单 API 入口。
 
-配置加载见 config.py；本文件提供 Flask app 工厂、run_collect 同步管线与 main()：
+配置加载见 config.py；本文件提供 Flask app 工厂、路由、run_collect 同步管线与 main()：
     GET /health → 200 {"status":"ok"}
-    run_collect(up_input, cfg) -> payload   # parse_up → sync_up → storage.atomic_save（T-015）
-（/collect 与 GET 缓存端点在 Phase 5 接入，见 TASKS.md）
+    POST /collect {"mid":...} | {"up":...} → 200 payload / 错误 JSON（T-016）
+（GET 缓存端点 T-017 接入；同步日志 T-020，见 TASKS.md）
 """
 import sys
+import traceback
 from datetime import datetime, timezone
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 import storage
 import wbi
-from bili import parse_up, sync_up
+from bili import BiliError, parse_up, sync_up
 from config import ConfigError, ensure_dirs, load_config
+
+#: BiliError 错码 → HTTP 状态映射（契约见 TASKS.md 契约总览）
+ERROR_STATUS = {
+    "invalid_up": 400,
+    "not_found": 404,
+    "fetch_failed": 502,
+    "invalid_response": 502,
+    "wbi_failed": 502,
+    "incomplete": 502,
+    "rate_limited": 429,
+    "risk_control": 429,
+    "timeout": 504,
+    "internal": 500,
+}
+
+
+def _error_response(code, message):
+    """错误 JSON 契约：{"error": {"code", "message"}} + 契约映射的状态码。"""
+    return jsonify(error={"code": code, "message": message}), ERROR_STATUS.get(code, 500)
 
 
 def create_app(cfg):
@@ -23,6 +43,27 @@ def create_app(cfg):
     @app.get("/health")
     def health():
         return jsonify(status="ok")
+
+    @app.post("/collect")
+    def collect_route():
+        """POST /collect：{"mid": int} 或 {"up": int|数字串|空间 URL} → 全量同步。
+
+        两者都给或都缺 / 解析失败 → 400 invalid_up；成功 → 200 payload（T-015 契约）；
+        BiliError → 契约映射状态码 + 错误 JSON；未预期异常 → 500 internal。
+        """
+        body = request.get_json(silent=True) or {}
+        has_mid, has_up = "mid" in body, "up" in body
+        if has_mid == has_up:
+            return _error_response("invalid_up", "请求必须且只能提供 mid 或 up 之一")
+        up_input = body["mid"] if has_mid else body["up"]
+        try:
+            payload = run_collect(up_input, cfg)
+        except BiliError as e:
+            return _error_response(e.code, str(e))
+        except Exception as e:
+            traceback.print_exc()
+            return _error_response("internal", f"内部错误: {e}")
+        return jsonify(payload)
 
     return app
 
