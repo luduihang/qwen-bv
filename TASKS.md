@@ -80,21 +80,6 @@
 
 ## Active
 
-### Phase 5 — /collect、cached API（串行，main）
-
-- [ ] T-016 — POST /collect
-  - **Owns:** `app.py`（路由）
-  - **Contract:** 见契约总览 /collect 请求/响应
-  - **Done when:** `pytest tests/test_api.py -q` 全绿（/collect 部分）
-- [ ] T-017 — GET cached API
-  - **Owns:** `app.py`（路由）
-  - **Contract:** 见契约总览 GET 契约
-  - **Done when:** `pytest tests/test_api.py -q` 全绿（GET 部分）
-- [ ] T-018 — API 测试
-  - **Owns:** `tests/test_api.py`
-  - 覆盖：/collect 成功（全 mock：200 + 字段齐全 + 三文件落盘）、/collect 参数错误（都缺 / 都给 / 昵称 / 非数字 → 400）、GET bvids（200 + 从未同步 404）、GET videos（offset/limit 分页 + 404 + clamp）、错误 JSON 形状 `{"error":{"code","message"}}`
-  - **Done when:** `pytest tests/ -q` 全绿
-
 ### Phase 6 — 异常、限速、日志（串行，main）
 
 - [ ] T-019 — 错误分类与风控识别
@@ -131,6 +116,9 @@
 
 ## Done
 
+- T-018 — test_api 补齐（错误 JSON 精确形状/非 JSON body 400/mid 数字串/无 tmp 残留/jsonl 中文往返），全量 176 绿 + 真实 snapshot 冒烟（678 条 bvids/分页/clamp/404/400）（commit `630bb71`）
+- T-017 — GET /up/<mid>/bvids 与 /videos?offset&limit（从未同步 404 not_found；limit clamp [1,500] 默认 100、offset clamp >=0 默认 0、非整数按默认值）+ test_api GET 15 例（commit `f4acf04`）
+- T-016 — POST /collect（mid/up 二选一解析 + run_collect 管线 + ERROR_STATUS 契约映射 + 错误 JSON）+ test_api /collect 20 例（全 mock）（commit `f37fb6c`）
 - T-015 — app.py run_collect 原子 snapshot 管线（parse_up → sync_up → storage.atomic_save → payload：三相对路径 + bvids，manifest synced_at ISO8601 UTC；失败 → 旧 snapshot 原样、无 tmp 残留、异常上抛）+ 管线测试 6 例（成功/space URL/空清单/非法输入/同步失败不落盘/存储失败不落盘，全 mock）（commit `a7fa239`）；main() 启动补 `wbi.configure(cfg)`（工作包 C 发现②）；另真实响应兼容 fix `9525238`（新 wbi 接口 data.list 为 dict、列表在其 vlist；条目扁平字段 author/mid/length/description，2026-10-06 带 Cookie 实测发现）
 - T-014 — sync_up 完整性校验（drift<0 成功 / 0≤drift≤max(3, 1%) 成功+warn / 超过 → incomplete 不落盘，DECISIONS 2026-10-05-1）+ test_sync 9 例（含 500→430 验收场景与 1% 边界）（commit `a74895f`，merge `7c1faa9`）
 - T-013 — 分页/去重/重试测试 9 例（多页全量/末页不足/count=0/跨页去重保先出现/created 降序稳定/中途 timeout 重试成功/重试耗尽 timeout+fetch_failed/硬上限守卫）（commit `1752eba`）

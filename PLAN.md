@@ -99,7 +99,7 @@ worktree C: ───────── C: T-010→T-014 bili 链（单页/分�
 
 ## Current step
 
-**T-015 完成、Phase 4 全部收口**（2026-10-06）— T-015 app.py run_collect 原子 snapshot 管线（`a7fa239`，test_pipeline 6 例）+ main() 启动 `wbi.configure(cfg)`；`pytest tests/ -q` 136 全绿（全 mock）。真实 e2e（Cookie 已入 config.yaml，值不入仓库）：老番茄（mid=546195）全量 678 视频 / 23 页 / 33.7s、drift=0，三文件落盘无重复无 tmp 残留。实测发现新 wbi 接口真实响应形状（data.list 为 dict、条目扁平字段）→ 兼容 fix `9525238` + 2 真实形状测试。下一步：Phase 5 串行 main — T-016 POST /collect + T-017 GET 缓存 API（T-018 test_api.py）→ Phase 6（错误/限速/日志）→ Phase 7（README + 真实验收）。
+**Phase 5 完成**（2026-10-06）— T-016 POST /collect + T-017 GET /up/<mid>/{bvids,videos} + T-018 test_api 40 例（全 mock），`pytest tests/ -q` 176 全绿；真实 snapshot 冒烟通过（老番茄 678 条：bvids/分页/clamp/404/400 均正确）。v1 核心目标达成：一条 curl 拿全量去重 BV 清单，GET 读缓存。下一步：Phase 6 串行 main — T-019 错码/风控定稿 + T-020 同步日志 + T-021 异常场景测试 → Phase 7（README + 真实验收）。
 
 ## Notes
 

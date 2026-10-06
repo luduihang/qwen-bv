@@ -3,9 +3,28 @@
 > Rolling session summaries. Newest first. Loaded at session start so the next session knows where work left off.
 > Each entry is 2-3 sentences. Older entries get pruned/consolidated when this file exceeds ~100 entries or ~8k chars.
 
+
+<!-- session-in-progress:start=2026-10-05T15:37:01.606Z -->
+## 2026-10-06 12:00 — ## Phase 5 梳理（/collect + cached API，串行 main）
+
+**目标**：把已跑通的同步管线（`run_collect`）和磁盘... _(in progress)_
+## Phase 5 梳理（/collect + cached API，串行 main）
+
+**目标**：把已跑通的同步管线（`run_collect`）和磁盘 snapshot 暴露为 HTTP API —— 一条 curl 拿全量 BV 清单，GET 读缓存。**v1 核心目标在这一 Phase 达成**。
+
+| 任务 | Owns | 契约要点（TASKS 冻结） | Done when |
+|---|---|---|---|
+| **T-016** POST /collect | `app.py` 路由 | 请求 `{"mid": int}` 或 `{"up": int\|数字串\|空间URL}`；两者都给/都缺/解析失败 → 400 `invalid_up`。200 返回 `{mid, name, total_reported, total_fetched, total_unique, pages_fetched, bvids_file, videos_file, manifest_file, bvids}`（三 `*_file` 为相对路径）。错误统一 `{"erro...
+<!-- end-session-in-progress -->
 ## Entries
 
 <!-- newest first -->
+
+## 2026-10-06 12:05 — Phase 5 完成 ✅（T-016~T-018，main 串行，3 commit + 冒烟）
+
+**内容**：T-016 POST /collect（`{"mid":int}` 或 `{"up":int|数字串|空间URL}`，两者都给/都缺/解析失败 → 400 invalid_up；成功 200 契约 payload 含三相对路径 + bvids；BiliError → ERROR_STATUS 契约映射 400/404/429/502/504，generic → 500 internal；错误统一 `{"error":{"code","message"}}`）（`f37fb6c`）；T-017 GET /up/<mid>/bvids 与 /videos?offset&limit（从未同步 → 404 not_found；limit 默认 100 clamp [1,500]、offset 默认 0 clamp ≥0、非整数按默认值；路径 mid 复用 parse_up → 非数字 400）（`f4acf04`）；T-018 test_api 补齐（错误 JSON 精确形状/非 JSON body 400/mid 数字串/无 tmp 残留/jsonl 中文往返）（`630bb71`）。纯路由层，未动 bili/wbi/storage 逻辑；同步日志留给 T-020。
+**验收门**：`pytest tests/ -q` 176 全绿（基线 136 + 新增 40，全 mock）；真实 snapshot 冒烟（老番茄 678 条，不走网络）：bvids count=678、offset=677 取尾部 1 条、limit=99999→500、未同步 mid 404、/collect 都缺 400，全部正确。用户范围强调已入项目记忆：音频转文字（qwen-tts /transcribe）不属于本项目任务。
+**下一步**：Phase 6 串行 main — T-019 错码/风控码表定稿 + T-020 同步日志（start/page/retry/error/ok）+ T-021 异常场景测试 → Phase 7（README + 真实验收）。
 
 ## 2026-10-06 01:55 — T-015 原子 snapshot 管线完成 ✅（Phase 4 收口，136 全绿，真实 UP 主 e2e 通过）
 
